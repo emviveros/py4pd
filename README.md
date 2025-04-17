@@ -15,6 +15,9 @@
   <a href="https://github.com/charlesneimog/py4pd/actions/workflows/Builder.yml"><img src="https://github.com/charlesneimog/py4pd/actions/workflows/Builder.yml/badge.svg?branch=master"></a>
 </p>
 
+> [!IMPORTANT]  
+> `py4pd` will be updated to a more maintainable and simplified version. You can check it out on the `py4pd-1.0.0` branch, with some examples available at https://github.com/charlesneimog/py4pd/issues/98#issuecomment-2745326771.
+> 
 py4pd allows write PureData Objects using Python instead of C/C++. The main goal is to allow easy IA, Scores, Graphics, and bring to Pd possibilities with array, list and others types. With Python, you can:
 * Use scores inside PureData;
 * Use svg/draws as scores;
