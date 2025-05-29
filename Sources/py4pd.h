@@ -1,257 +1,162 @@
-// clang-format off
 #ifndef PY4PD_H
 #define PY4PD_H
 
 #include <m_pd.h>
+
 #include <g_canvas.h>
-#include <s_stuff.h> // get the search 
-#include <dirent.h>
-#include <pthread.h>
+#include <m_imp.h>
+#include <s_stuff.h>
 
-
-#ifdef _WIN32
-    #include <windows.h>
-#else
-   
-    #include <pthread.h>
-#endif
-
-#define PY_SSIZE_T_CLEAN // Remove deprecated functions
 #include <Python.h>
 
-#ifdef __linux__
-    #define __USE_GNU
-#endif
-
-#define PY4PD_NORMALOBJ 0
-#define PY4PD_VISOBJ 1
-#define PY4PD_AUDIOINOBJ 2
-#define PY4PD_AUDIOOUTOBJ 3
-#define PY4PD_AUDIOOBJ 4
-
-#define PY4PD_MAJOR_VERSION 0
-#define PY4PD_MINOR_VERSION 9
+#define PY4PD_MAJOR_VERSION 1
+#define PY4PD_MINOR_VERSION 0
 #define PY4PD_MICRO_VERSION 0
 
-#define PY4PD_GIT_ISSUES "https://github.com/charlesneimog/py4pd/issues"
-#define PYTHON_REQUIRED_VERSION(major, minor) ((major < PY_MAJOR_VERSION) || (major == PY_MAJOR_VERSION && minor <= PY_MINOR_VERSION))
+static t_class *py4pd_class;
+#define PYOBJECT -1997
+static int objCount = 0;
 
-// DEFINE STANDARD IDE EDITOR
-#ifndef PY4PD_EDITOR
-    #ifdef _WIN32
-        // Windows
-        #define PY4PD_EDITOR "idle3.12"
-    #elif defined(__APPLE__) || defined(__MACH__)
-        // macOS
-        #define PY4PD_EDITOR "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -m idlelib.idle"
-    #else
-        #define PY4PD_EDITOR "idle3.12"
-    #endif
-#endif
+// ╭─────────────────────────────────────╮
+// │               Classes               │
+// ╰─────────────────────────────────────╯
+typedef struct _pdpy_pyclass t_pdpy_pyclass;
+typedef struct _pdpy_clock t_pdpy_clock;
+static t_class *pdpy_proxyinlet_class = NULL;
+static t_class *pdpy_pyobjectout_class = NULL;
+static t_class *pdpy_proxyclock_class = NULL;
+static t_widgetbehavior pdpy_widgetbehavior;
 
-#if PY4PD_DEBUG
-#define LOG(message, ...) \
-    do { \
-        fprintf(stderr, "[%s:%d] " message "\n", __FILE__, __LINE__, ##__VA_ARGS__); \
-    } while (0)
-#else
-#define LOG(message, ...)
-#endif
+// ╭─────────────────────────────────────╮
+// │            GUI INTERFACE            │
+// ╰─────────────────────────────────────╯
+extern void pdpy_getrect(t_gobj *z, t_glist *glist, int *xp1, int *yp1, int *xp2, int *yp2);
+extern void pdpy_displace(t_gobj *z, t_glist *glist, int dx, int dy);
+extern void pdpy_delete(t_gobj *z, t_glist *glist);
+extern int pdpy_click(t_gobj *z, t_glist *gl, int xpos, int ypos, int shift, int alt, int dbl,
+                      int doit);
+extern void pdpy_vis(t_gobj *z, t_glist *glist, int vis);
+extern void pdpy_activate(t_gobj *z, t_glist *glist, int state);
 
+// ╭─────────────────────────────────────╮
+// │        External Definitions         │
+// ╰─────────────────────────────────────╯
+extern int sys_trytoopenone(const char *dir, const char *name, const char *ext, char *dirresult,
+                            char **nameresult, unsigned int size, int bin);
 
-// PY4PD 
-extern t_class *Py4pdObjClass, *Py4pdVisObjClass, *Py4pdPtrClass;
+#define trytoopenone(dir, name, ...)                                                               \
+    sys_trytoopenone(sys_isabsolutepath(name) ? "" : dir, name, __VA_ARGS__)
 
-
-// OUTLETS 
-/*
- * @brief Structure representing an array of all the auxiliar outlets of py4pd.
- */
-typedef struct _py4pdExtraOuts{
-    t_atomtype u_type;
-    t_outlet *u_outlet;
-    int outCount;
-} py4pdExtraOuts;
-
-// PLAYER 
-/*
- * @brief Structure representing the values that are stored in the dictionary to be played for the player.
- */
-typedef struct {
-    int Onset;
-    int Size;
-    PyObject **pValues;
-} KeyValuePair;
-
-typedef struct {
-    KeyValuePair* Entries;
-    int Size;
-    int LastOnset;
-    int isSorted;
-} Dictionary;
-
-// pValues Objs 
-typedef struct _py4pd_pValue{ 
-    PyObject* pValue;
-    int IspValue;
-    t_symbol *ObjOwner;
-    int ClearAfterUse;
-    int AlreadyIncref;
-    int PdOutCount;
-}t_py4pd_pValue;
-
-// Collect objects
-typedef struct pdcollectItem{
-    char*         Key;
-    PyObject*     pList;
-    PyObject*     pItem;
-    int           WasCleaned;
-    int           aCumulative;
-    int           Id;
-} pdcollectItem;
-
-typedef struct pdcollectHash{
-    pdcollectItem** Itens;
-    int Size;
-    int Count;
-} pdcollectHash;
-
-// VIS OBJECTS 
-typedef struct _py4pd_edit_proxy{ 
-    t_object    p_obj;
-    t_symbol   *p_sym;
-    t_clock    *p_clock;
-    struct      _py *p_cnv;
-}t_py4pd_edit_proxy;
-
-
-typedef struct _PyObjectPtr {
+// ╭─────────────────────────────────────╮
+// │          Object Base Class          │
+// ╰─────────────────────────────────────╯
+typedef struct _pdpy_objptr {
     t_pd x_pd;
-    t_symbol *Id;
-    t_py4pd_pValue *Py;
-} t_PyObjectPtr;
+    t_symbol *id;
+    PyObject *pValue;
+} t_pdpy_objptr;
 
-// PY4PD 
-typedef struct _py { // It seems that all the objects are some kind of class.
-    t_object            obj; // o objeto
-    t_glist             *Glist;
-    t_canvas            *Canvas; // pointer to the canvas
-    t_outlet            *MainOut; // outlet 1.
-    t_inlet             *MainIn; // intlet 1
+// ─────────────────────────────────────
+typedef struct _pdpy_pdobj {
+    t_object obj;
+    t_sample sample;
+    t_canvas *canvas;
 
-    // TESTING THINGS
-    t_py4pd_pValue      **PyObjArgs; // Obj Variables Arguments 
-    pdcollectHash       *PdCollect; // hash table to store the objects
-    t_int               RecursiveCalls; // check the number of recursive calls
-    t_int               StackLimit; // check the number of recursive calls
-    t_clock             *RecursiveClock; // clock to check the number of recursive calls 
-    PyObject            *RecursiveObject; // object to check the number of recursive calls
-    t_atom              *PdObjArgs;
-    t_int               ObjArgsCount;
+    // PyClass
+    const char *script_filename;
+    PyObject *pyclass;
+    char id[MAXPDSTRING];
 
-    t_int                VisMode; // is vis object
-    t_int                FuncCalled; // flag to check if the set function was called
-    t_int                pArgsCount; // number of arguments
-    t_int                OutPyPointer; // flag to check if is to output the python pointer
-    t_int                UsepArgs;
-    t_int                UsepKwargs;
-    
-    // Player 
-    t_clock              *PlayerClock;
-    Dictionary           *PlayerDict;
-    t_int                 PlayerRunning;
-    t_int                 MsOnset;
-    t_int                 Playable;
+    // dsp
+    PyObject *dspfunction;
+    unsigned nchs;
+    unsigned vecsize;
+    unsigned siginlets;
+    unsigned sigoutlets;
 
-    // PyObject Ptr
-    t_PyObjectPtr       *PyObjectPtr;
+    // gui
+    int width, height;
+    int mouse_drag_x, mouse_drag_y, mouse_down;
+    bool has_gui;
+    bool first_draw;
+    int num_layers;
+    char object_tag[128];
 
-    // Library
-    t_int                   IsLib; // flag to check if is to use python library
-    t_int                   PyObject;
-    t_int                   ObjType;
-    t_int                   IgnoreOnNone;
-    t_symbol                *ObjName; // object name
-    PyObject                *ArgsDict; // parameters
-    struct Py4pdNewObject   *ObjClass; // object class
+    // clock
+    t_pdpy_clock **clocks;
+    int clocks_size;
 
-    // == PYTHON
-    PyThreadState       *pSubInterpState;
-    t_int               pSubInterpRunning; // number of arguments
+    // properties
+    t_symbol *current_frame;
+    t_symbol *properties_receiver;
+    int checkbox_count;
+    int current_row;
+    int current_col;
 
-    PyObject            *pModule; // script name
-    PyObject            *pFunction; // function name
-    // PyObject            *showFunction; // TODO: FUTURE function to show the function
-    PyObject            *KwArgsDict; // arguments
-    PyObject            *pObjVarDict;
-    PyObject            *pArgTuple;
-    t_symbol            *pFuncName; // function_name; // function name
-    t_symbol            *pScriptName; // script name or pathname
+    // in and outs
+    t_outlet **outs;
+    t_inlet **ins;
+    int outletsize;
+    int inletsize;
+    struct pdpy_proxyinlet *proxy_in;
+    t_pdpy_objptr *outobjptr; // PyObject <type> <pointer>
+} t_pdpy_pdobj;
 
-    // == AUDIO AND NUMPY
-    t_int               AudioError; // To avoid multiple error messages
-    t_int               AudioOut; // flag to check if is to use audio output
-    t_int               AudioIn; // flag to check if is to use audio input
-    t_int               PipGlobalInstall;
-    t_int               UseNumpy; // flag to check if is to use numpy array in audioInput
-    t_int               NumpyImported; // flag to check if numpy was imported
-    t_float             Py4pdAudio; // audio to fe used in CLASSMAINSIGIN
-    t_int               VectorSize; // vector size
-    t_int               nChs; // number of channels
+// ─────────────────────────────────────
+typedef struct _pdpy_pyclass {
+    PyObject_HEAD const char *name;
+    t_pdpy_pdobj *pdobj;
+    PyObject *outlets;
+    PyObject *inlets;
+    PyObject *pyargs;
+} t_pdpy_pyclass;
 
-    // Pic Object
-    t_int               Zoom; // zoom of the patch
-    t_int               Width; // width of image
-    t_int               Height; // height of image
-    t_int               Edit; // patch is in edit mode or not
-    t_int               DefImg; // flag to check if the object was initialized
-    t_int               nInlets; // number of inlets
-    t_int               nOutlets; // number of outlets
-    t_int               MouseIsOver; // flag to check if the mouse is over the object
-    t_symbol            *PicFilePath;
-    t_symbol            *CanvasName; // name of the tcl variable for x
-    char                *ImageBase64; // image data in base64
-    t_int               DrawIOlets; // flag to check if the inlets and outlets were created
+// ─────────────────────────────────────
+typedef struct pdpy_proxyinlet {
+    t_pd pd;
+    t_pdpy_pdobj *owner;
+    unsigned int id;
+} t_pdpy_proxyinlet;
 
-    // Paths
-    t_symbol            *PkgPath; // packages path, where the packages are located
-    t_symbol            *CondaPath; // Conda path, where the conda site-packages are located
-    t_symbol            *PdPatchPath; // where the patch is located
-    t_symbol            *Py4pdPath; // where py4pd object is located
-    t_symbol            *TempPath; // temp path located in ~/.py4pd/, always is deleted when py4pd is closed
-    t_symbol            *LibraryFolder; // where the library is located
+// ─────────────────────────────────────
+typedef struct _pdpy_clock {
+    PyObject_HEAD PyObject *function;
+    t_pd pd;
+    t_clock *clock;
+    t_pdpy_pdobj *owner;
+    const char *functionname;
+    float delay_time;
+} t_pdpy_clock;
 
-    // script_name; // script name or pathname
-    t_symbol            *EditorName; // editor name
-    t_symbol            *EditorCommand; // editor personalized command
-    py4pdExtraOuts      *ExtrasOuts; // outlets
-    t_py4pd_edit_proxy  *Proxy; // para lidar com inlets auxiliares
+// ╭─────────────────────────────────────╮
+// │             Definitions             │
+// ╰─────────────────────────────────────╯
+extern int pd4pd_loader_wrappath(int fd, const char *name, const char *dirbuf);
 
-}t_py;
+extern PyMODINIT_FUNC pdpy_initpuredatamodule();
+extern void pdpy_proxyinlet_setup(void);
+extern void pdpy_pyobjectoutput_setup(void);
+extern void pdpy_execute(t_pdpy_pdobj *x, char *methodname, t_symbol *s, int argc, t_atom *argv);
+extern void pdpy_proxyinlet_init(t_pdpy_proxyinlet *p, t_pdpy_pdobj *owner, unsigned int id);
+extern void pdpy_proxy_anything(t_pdpy_proxyinlet *proxy, t_symbol *s, int argc, t_atom *argv);
+extern void pdpy_clock_execute(t_pdpy_clock *x);
+extern void pdpy_printerror(t_pdpy_pdobj *x);
+extern void pdpy_pyobject(t_pdpy_pdobj *x, t_symbol *s, t_symbol *id);
+extern void pdpy_execute(t_pdpy_pdobj *x, char *methodname, t_symbol *s, int argc, t_atom *argv);
+extern void pdpy_properties(t_gobj *z, t_glist *owner);
 
-// LIBRARY OBJECT 
-typedef struct _py4pdInlet_proxy{
-    t_object     p_ob;
-    t_py        *p_master;
-    int          inletIndex;
-}t_py4pdInlet_proxy;
+#define trytoopenone(dir, name, ...)                                                               \
+    sys_trytoopenone(sys_isabsolutepath(name) ? "" : dir, name, __VA_ARGS__)
 
-typedef struct _classInlets{
-    t_object     p_ob;
-    t_py        *p_master;
-    int          inletIndex;
-}classInlets;
+extern PyObject *pdpy_getoutptr(t_symbol *s);
+extern PyObject *pdpy_newclock(PyObject *self, PyObject *args);
+extern PyObject *py4pdobj_converttopy(int argc, t_atom *argv);
 
+extern PyTypeObject pdpy_type;
 
-void Py4pd_Pip(t_py *x, t_symbol *s, int argc, t_atom *argv);
-void Py4pd_PrintDocs(t_py *x);
-void Py4pd_SetPythonPointersUsage(t_py *x, t_floatarg f);
-void Py4pd_SetFunction(t_py *x, t_symbol *s, int argc, t_atom *argv);
-
-#define PY4PD_IMAGE "R0lGODlhKgAhAPAAAP///wAAACH5BAAAAAAAIf8LSW1hZ2VNYWdpY2sOZ2FtbWE9MC40NTQ1NDUALAAAAAAqACEAAAIkhI+py+0Po5y02ouz3rz7D4biSJbmiabqyrbuC8fyTNf2jTMFADs="
-#define PY4PDSIGTOTAL(s) ((t_int)((s)->s_length * (s)->s_nchans))
-
-extern int objCount; 
-extern PyTypeObject Py4pdNewObj_Type;
+// ─────────────────────────────────────
+typedef struct _py {
+    t_object obj;
+} t_py;
 
 #endif
