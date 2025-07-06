@@ -1,49 +1,22 @@
+# Ignora artefatos de build do bundle moderno py4pd
+dist/
+!dist/.gitkeep
 *~
 *.html
 *.__pycache__
-*.dll
-*.o
-*.sh
-*.json
 .vscode/*
 Python
 bin
 pd/
 test/py4pd/
 py4pd.zip
-DLLs/*
-Lib/*
-# scripts/*
 test/*.wav
 build
 test/py4pd
-numpyincludes.txt
-pythonincludes.txt
-pythonpath.txt
 
-
-*.bat
-*.eps
 # Python Binaries
 __pycache__
 __pycache__/py.cpython-310.pyc
 
-# PureData Binaries
-*.pd_linux
-*.l_amd64
-*.m_amd64
-
 # Files for test
-*.tex
-*.texi
-*.analyzerinfo
-*.snalyzerinfo
-*.count
-#*.png
 *.vscode
-
-py4pd-env
-./compile_commands.json
-.cache/
-compile_commands.json
-py4pd.cfg
