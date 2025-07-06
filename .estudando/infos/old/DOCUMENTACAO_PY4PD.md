@@ -35,18 +35,6 @@ Estas mensagens funcionam assim que você cria o objeto `py4pd`, mesmo sem carre
 ```
 Isso recarrega o script Python associado ao objeto.
 
----
-
-## Tabela 2: Mensagens Roteadas para Python (sempre aceitas)
-
-Estas mensagens são sempre aceitas pelo py4pd, mesmo que você não tenha implementado o método Python correspondente. O roteamento é garantido pelo código C do py4pd. Se o método não existir, apenas um aviso é mostrado no console.
-
-| Mensagem   | O que faz? | Como usar no Pd | Como implementar no Python | Onde está no código |
-|------------|------------|-----------------|---------------------------|--------------------|
-| set        | Define um valor ou parâmetro | `;py4pd set 42` | `def in_1_set(self, valor): ...` | [`proxyinlets.c:17`](Sources/proxyinlets.c#L17), [`module.c:402`](Sources/module.c#L402) |
-| run        | Executa uma ação definida por você | `;py4pd run` | `def in_1_run(self): ...` | [`proxyinlets.c:17`](Sources/proxyinlets.c#L17), [`module.c:402`](Sources/module.c#L402) |
-| editor     | Abre um editor de texto | `;py4pd editor nvim` | `def in_1_editor(self, editor): ...` | [`proxyinlets.c:17`](Sources/proxyinlets.c#L17), [`module.c:402`](Sources/module.c#L402) |
-| ...        | Qualquer outra mensagem customizada | `;py4pd minha_msg ...` | `def in_1_minha_msg(self, ...): ...` | [`proxyinlets.c:17`](Sources/proxyinlets.c#L17), [`module.c:402`](Sources/module.c#L402) |
 
 **Exemplo prático:**
 No Pd:
