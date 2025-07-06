@@ -13,7 +13,7 @@ test/py4pd/
 py4pd.zip
 DLLs/*
 Lib/*
-scripts/*
+# scripts/*
 test/*.wav
 build
 test/py4pd
