@@ -48,12 +48,40 @@ def mylib_setup():
 
 ## Building from Source
 
-* To build from the source code:
-``` sh
-cmake . -B build -DPYVERSION=3.12
+### Pré-requisitos Automatizados
+* Execute o script de setup correspondente ao seu sistema operacional:
+  ```sh
+  # Linux/macOS
+  ./scripts/setup_dev_env.sh
+  
+  # Windows
+  scripts\setup_dev_env.bat
+  ```
+
+### Compilação
+```sh
+# Configurar o build (exemplo com flags)
+cmake -B build -DPD_INSTALL_DIR=/caminho/para/pure-data -DPY4PD_PYTHON_VERSION=3.11
+
+# Compilar
 cmake --build build
+
+# Instalar no diretório de externals do Pd
+cmake --install build
 ```
 
-On windows you need Mingw64.
+### Opções de Build
+| Flag CMake               | Descrição                          | Padrão   |
+|--------------------------|------------------------------------|----------|
+| `PD_INSTALL_DIR`         | Caminho para instalação do Pure Data | Requerido|
+| `PY4PD_PYTHON_VERSION`   | Versão do Python (3.10+)           | 3.11     |
+| `PY4PD_USE_UV`           | Usar `uv` para ambientes Python    | ON       |
+
+### Boas Práticas
+* O script de setup configura automaticamente:
+  - Ambientes Python isolados via `uv`
+  - Dependências de compilação
+  - Estrutura de build multiplataforma
+* Consulte [Documentação Técnica](.estudando/Guia de Arquitetura e Compilação do py.md) para detalhes avançados
 
 
