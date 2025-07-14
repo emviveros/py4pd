@@ -48,15 +48,44 @@ def mylib_setup():
 
 ## Building from Source
 
-### Pré-requisitos Automatizados
-* Execute o script de setup correspondente ao seu sistema operacional:
-  ```sh
-  # Linux/macOS
-  ./scripts/setup_dev_env.sh
-  
-  # Windows
-  scripts\setup_dev_env.bat
-  ```
+### Como executar os scripts de setup
+
+Siga estas instruções para configurar seu ambiente de desenvolvimento:
+
+1. **Local de execução**: Todos os comandos devem ser executados a partir do diretório raiz do projeto (onde o arquivo `README.md` está localizado).
+
+2. **Linux/macOS**:
+   ```sh
+   # Navegue até o diretório do projeto (se necessário)
+   cd /caminho/para/py4pd
+
+   # Dê permissão de execução ao script (apenas na primeira vez)
+   chmod +x ./scripts/setup_dev_env.sh
+
+   # Execute o script
+   ./scripts/setup_dev_env.sh
+   ```
+
+3. **Windows (Command Prompt)**:
+   ```
+   cd C:\caminho\para\py4pd
+   scripts\setup_dev_env.bat
+   ```
+
+4. **Windows (PowerShell)**:
+   ```
+   cd C:\caminho\para\py4pd
+   .\scripts\setup_dev_env.ps1
+   ```
+
+**Notas importantes**:
+- O script instalará automaticamente o CMake, Python, `uv` e todas as dependências necessárias.
+- O ambiente Python reprodutível será criado usando o `uv`, com dependências declaradas em `pyproject.toml` e travadas em `uv.lock`.
+- O lockfile `uv.lock` é gerado automaticamente com o comando `uv pip compile pyproject.toml` e deve ser mantido no repositório para garantir ambientes reprodutíveis.
+- Todo o gerenciamento de dependências é feito via `pyproject.toml` e `uv.lock`. Não utilize `requirements.txt`.
+- Não é mais necessário usar `requirements.txt`. Todo o gerenciamento de dependências é feito via `pyproject.toml` e `uv.lock`.
+- Em alguns sistemas, você pode precisar de permissões administrativas para instalar pacotes.
+- Após executar o script, prossiga com os comandos de build conforme descrito abaixo.
 
 ### Compilação
 ```sh
@@ -83,5 +112,3 @@ cmake --install build
   - Dependências de compilação
   - Estrutura de build multiplataforma
 * Consulte [Documentação Técnica](.estudando/Guia de Arquitetura e Compilação do py.md) para detalhes avançados
-
-

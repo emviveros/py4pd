@@ -3,7 +3,7 @@
 Este arquivo orienta a preparação do ambiente e o fluxo de compilação do py4pd, com foco em automação total e reprodutibilidade: todo o setup é realizado por scripts multiplataforma, sem etapas manuais, garantindo builds portáveis e integração direta ao Pure Data.
 
 **Como usar este arquivo:**
-1. Execute o script de setup correspondente ao seu sistema operacional (`./scripts/setup.sh` para Linux/macOS ou `scripts\setup.ps1` para Windows). O script cuidará de toda a configuração do ambiente, instalação de dependências e preparação do build.
+1. Execute o script de setup correspondente ao seu sistema operacional (`./scripts/setup.sh` para Linux/macOS ou `scripts\setup_dev_env.ps1` para Windows). O script cuidará de toda a configuração do ambiente, instalação de dependências e preparação do build.
 2. Após rodar o script, siga as instruções dos tópicos para compilar, validar e distribuir o py4pd.
 3. Use este guia para padronizar o onboarding de novos desenvolvedores e automatizar o build local e em CI/CD.
 

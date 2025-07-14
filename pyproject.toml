@@ -1,0 +1,12 @@
+[project]
+name = "py4pd"
+version = "0.1.0"
+description = "Ambiente reprodutível para documentação e build do py4pd"
+requires-python = ">=3.8"
+dependencies = [
+  "mkdocs-material[imaging]",
+  "mkdocs-localsearch"
+]
+
+[tool.uv]
+# Configuração padrão para ambientes gerenciados pelo uv

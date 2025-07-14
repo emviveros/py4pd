@@ -3,7 +3,7 @@
 Quais tecnologias e frameworks serão utilizados?
 - External em C (loader leve: `py4pd.dll`/`.pd_linux`/`.pd_darwin`) para Pure Data.
 - Binários reais do py4pd para cada versão de Python suportada (ex: `py4pd-py3.11.dll`, `py4pd-py3.12.dll`).
-- Scripts multiplataforma de setup e build (`setup_dev_env.sh`, `setup_dev_env.bat`, `build_all.sh`, `build_all.bat`).
+- Scripts multiplataforma de setup e build (`setup_dev_env.sh`, `setup_dev_env.ps1`, `build_all.sh`, `build_all.bat`).
 - Script de bootstrap (`py4pd-bootstrap.sh`) para configuração automática do ambiente.
 - Gerenciador de ambientes Python: `uv` (instalação de Python, criação de `.venv`, instalação de pacotes).
 - Distribuição via Deken (ecossistema Pure Data).
