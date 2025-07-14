@@ -19,4 +19,7 @@ __pycache__
 __pycache__/py.cpython-310.pyc
 
 # Files for test
-*.vscode
+Resources/puredata/*
+
+# Environment files
+.venv/*
