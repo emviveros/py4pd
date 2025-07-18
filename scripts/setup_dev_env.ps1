@@ -164,10 +164,84 @@ $venvDir = Join-Path $repoRoot ".venv"
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $lockFile = Join-Path $repoRoot "uv.lock"
 
+# --- Detecção e encerramento de processos bloqueando .venv ---
+if (Test-Path $venvDir) {
+    Write-Host "[INFO] Ambiente virtual existente detectado em '$venvDir'. Verificando processos que possam estar bloqueando..." -ForegroundColor Yellow
+
+    $processNames = @("python.exe", "uv.exe", "pip.exe")
+    $blockedPids = @()
+    $blockedProcs = @()
+
+    # Tenta usar Sysinternals Handle se disponível para detecção precisa
+    $handleExe = "handle.exe"
+    $handleCmd = Get-Command $handleExe -ErrorAction SilentlyContinue
+    if ($handleCmd) {
+        $handlePath = $handleCmd.Source
+        Write-Host "[DEBUG] Utilizando Sysinternals Handle para detecção de bloqueio..." -ForegroundColor Cyan
+        $handleOutput = & $handleExe $venvDir 2>&1
+        foreach ($line in $handleOutput) {
+            if ($line -match "pid: (\d+)") {
+                $pid = $matches[1]
+                $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                if ($proc -and $processNames -contains $proc.Name.ToLower() + ".exe") {
+                    $blockedPids += $pid
+                    $blockedProcs += $proc
+                }
+            }
+        }
+    } else {
+        Write-Host "[DEBUG] Sysinternals Handle não encontrado. Usando fallback por caminho e nome de processo..." -ForegroundColor Yellow
+        foreach ($proc in Get-Process | Where-Object { $processNames -contains ($_.Name.ToLower() + ".exe") }) {
+            try {
+                $procModules = $proc.Modules | Where-Object { $_.FileName -like "$venvDir*" }
+                if ($procModules) {
+                    $blockedPids += $proc.Id
+                    $blockedProcs += $proc
+                }
+            } catch {}
+        }
+    }
+
+    if ($blockedPids.Count -gt 0) {
+        Write-Host "[AVISO] Encontrados processos bloqueando arquivos em .venv:" -ForegroundColor Yellow
+        foreach ($proc in $blockedProcs) {
+            Write-Host ("    - {0} (PID {1})" -f $proc.Name, $proc.Id) -ForegroundColor Magenta
+            try {
+                Stop-Process -Id $proc.Id -Force
+                Write-Host ("    [OK] Processo encerrado: {0} (PID {1})" -f $proc.Name, $proc.Id) -ForegroundColor Green
+            } catch {
+                Write-Host ("    [ERRO] Falha ao encerrar {0} (PID {1}): {2}" -f $proc.Name, $proc.Id, $_.Exception.Message) -ForegroundColor Red
+            }
+        }
+        Start-Sleep -Seconds 2
+    } else {
+        Write-Host "[INFO] Nenhum processo bloqueando arquivos em .venv detectado." -ForegroundColor Green
+    }
+
+    Write-Host "[INFO] Removendo .venv..." -ForegroundColor Yellow
+    try {
+        Remove-Item $venvDir -Recurse -Force -ErrorAction Stop
+        Write-Host "[INFO] Ambiente virtual removido com sucesso." -ForegroundColor Green
+    } catch {
+        Write-Host "[ERRO] Falha ao remover '$venvDir'. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[DICA] Verifique se algum processo está usando arquivos dentro de .venv e tente novamente." -ForegroundColor Yellow
+        exit 1
+    }
+}
+
 try {
     Write-Host "[INFO] Criando ambiente virtual em '$venvDir' com Python $pythonVersion..." -ForegroundColor Cyan
     & $uvExe venv --python $pythonVersion $venvDir
     Write-Host "[INFO] Ambiente virtual criado." -ForegroundColor Green
+
+    # Validar pyvenv.cfg
+    $pyvenvCfg = Join-Path $venvDir "pyvenv.cfg"
+    if (-not (Test-Path $pyvenvCfg)) {
+        Write-Host "[ERRO] Ambiente virtual criado, mas 'pyvenv.cfg' está ausente. Ambiente corrompido." -ForegroundColor Red
+        exit 1
+    } else {
+        Write-Host "[INFO] 'pyvenv.cfg' detectado. Ambiente virtual íntegro." -ForegroundColor Green
+    }
 
     if (Test-Path $lockFile) {
         Write-Host "[INFO] Detectado uv.lock - sincronizando dependências..." -ForegroundColor Cyan
@@ -183,12 +257,96 @@ try {
     exit 1
 }
 
-# --- Etapa 7: Mensagem Final ---
+# --- Etapa 7: Download e Organização dos Arquivos Pure Data ---
+Write-Host "[INFO] Etapa 7: Baixando e organizando arquivos do Pure Data..." -ForegroundColor Green
+
+$pdResourcesDir = Join-Path $repoRoot "Resources\puredata"
+if (-not (Test-Path $pdResourcesDir)) {
+    Write-Host "[INFO] Criando diretório Resources\puredata..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $pdResourcesDir | Out-Null
+}
+
+# Baixar m_pd.h
+$mPdUrl = "https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h"
+$mPdDest = Join-Path $pdResourcesDir "m_pd.h"
+if (-not (Test-Path $mPdDest)) {
+    Write-Host "[INFO] Baixando m_pd.h..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $mPdUrl -OutFile $mPdDest
+} else {
+    Write-Host "[INFO] m_pd.h já existe. Pulando download."
+}
+
+# Baixar pd.dll ou pd64.dll (última release) com tratamento robusto
+$releaseApi = "https://api.github.com/repos/pure-data/pure-data/releases/latest"
+try {
+    $releaseInfo = Invoke-RestMethod -Uri $releaseApi -ErrorAction Stop
+    $pd64Asset = $releaseInfo.assets | Where-Object { $_.name -eq "pd64.dll" }
+    $pdAsset = $releaseInfo.assets | Where-Object { $_.name -eq "pd.dll" }
+    $selectedAsset = $null
+
+    if ($arch -eq "x86_64" -and $pd64Asset) {
+        $selectedAsset = $pd64Asset
+    } elseif ($pdAsset) {
+        $selectedAsset = $pdAsset
+    }
+
+    if ($selectedAsset) {
+        $dllDest = Join-Path $pdResourcesDir $selectedAsset.name
+        if (-not (Test-Path $dllDest)) {
+            Write-Host "[INFO] Baixando $($selectedAsset.name)..." -ForegroundColor Cyan
+            try {
+                Invoke-WebRequest -Uri $selectedAsset.browser_download_url -OutFile $dllDest -ErrorAction Stop
+                Write-Host "[INFO] Download de $($selectedAsset.name) concluído." -ForegroundColor Green
+            } catch {
+                Write-Host "[ERRO] Falha ao baixar $($selectedAsset.name): $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "[DICA] Baixe manualmente o binário da release oficial do Pure Data e coloque em '$pdResourcesDir'." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "[INFO] $($selectedAsset.name) já existe. Pulando download."
+        }
+    } else {
+        Write-Host "[AVISO] Nenhum binário pd.dll/pd64.dll encontrado para sua arquitetura na última release do Pure Data." -ForegroundColor Yellow
+        Write-Host "[DICA] Baixe manualmente o binário adequado da página de releases: https://github.com/pure-data/pure-data/releases/latest" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "[ERRO] Falha ao acessar a API de releases do Pure Data: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[DICA] Verifique sua conexão ou baixe manualmente o binário pd.dll/pd64.dll." -ForegroundColor Yellow
+}
+
+# Copiar arquivos de ajuda .pd
+$helpFiles = Get-ChildItem -Path (Join-Path $repoRoot "Sources\py4pd") -Filter "*-help.pd"
+foreach ($file in $helpFiles) {
+    $dest = Join-Path $pdResourcesDir $file.Name
+    Copy-Item $file.FullName $dest -Force
+    Write-Host "[INFO] Copiado $($file.Name) para Resources\puredata."
+}
+# Copiar py4pd-help.pd se existir
+$py4pdHelp = Join-Path $repoRoot "Resources\py4pd-help.pd"
+if (Test-Path $py4pdHelp) {
+    Copy-Item $py4pdHelp (Join-Path $pdResourcesDir "py4pd-help.pd") -Force
+    Write-Host "[INFO] Copiado py4pd-help.pd para Resources\puredata."
+}
+
+# Configurar variáveis de ambiente para build
+$env:PD_SOURCES_PATH = $mPdDest
+$env:PDBINDIR = if (Test-Path (Join-Path $pdResourcesDir "pd64.dll")) { Join-Path $pdResourcesDir "pd64.dll" } else { Join-Path $pdResourcesDir "pd.dll" }
+$env:PDLIBDIR = $pdResourcesDir
+
+# Atualizar .gitignore
+$gitignorePath = Join-Path $repoRoot ".gitignore"
+$gitignoreEntry = "Resources/puredata/*"
+if (-not (Get-Content $gitignorePath | Select-String -Pattern [regex]::Escape($gitignoreEntry))) {
+    Add-Content -Path $gitignorePath -Value $gitignoreEntry
+    Write-Host "[INFO] Adicionado Resources/puredata/* ao .gitignore."
+}
+
+# --- Mensagem Final ---
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
 Write-Host "[SUCESSO] O ambiente de desenvolvimento foi configurado!" -ForegroundColor Green
 Write-Host "Ferramentas de Build: CMake, MinGW"
 Write-Host "Ambiente Python: Criado em '.\.venv' com Python $pythonVersion"
 Write-Host "Dependências Python: Instaladas"
+Write-Host "Arquivos Pure Data: Baixados e organizados em Resources\puredata"
 Write-Host ""
 Write-Host "Próximos passos:" -ForegroundColor Cyan
 Write-Host "1. Você pode fechar e reabrir seu terminal para garantir que todas as variáveis de ambiente sejam carregadas."
