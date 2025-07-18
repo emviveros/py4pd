@@ -271,70 +271,108 @@ foreach ($dir in @($pdSdkDir, $pdIncludeDir, $pdLibDir_x64, $pdLibDir_x86)) {
     }
 }
 
-# Obter última release estável do Pure Data
-$releaseApi = "https://api.github.com/repos/pure-data/pure-data/releases/latest"
+# Baixar binários do Pure Data diretamente do site oficial (UCSD) - versão dinâmica
+$baseUrl = "https://msp.ucsd.edu/Software"
+
+Write-Host "[INFO] Buscando versão estável mais recente do Pure Data..." -ForegroundColor Cyan
 try {
-    $releaseInfo = Invoke-RestMethod -Uri $releaseApi -ErrorAction Stop
-    $assets = $releaseInfo.assets
+    $html = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing
+    $links = $html.Links | Where-Object { $_.href -match "\.msw\.zip$" -and $_.href -notmatch "test" }
+    $files = $links | ForEach-Object { $_.href }
 
-    $archMap = @{
-        "x64" = "windows-x64.msw.zip"
-        "x86" = "windows.msw.zip"
-    }
-
-    foreach ($archKey in $archMap.Keys) {
-        $zipName = $archMap[$archKey]
-        $asset = $assets | Where-Object { $_.name -eq $zipName }
-        if ($asset) {
-            $zipPath = Join-Path $pdSdkDir $zipName
-            if (-not (Test-Path $zipPath)) {
-                Write-Host "[INFO] Baixando $zipName..." -ForegroundColor Cyan
-                Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -ErrorAction Stop
-            } else {
-                Write-Host "[INFO] $zipName já existe. Pulando download."
-            }
-
-            # Extrair arquivos necessários
-            $extractDir = Join-Path $pdSdkDir "tmp_$archKey"
-            if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
-            Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-            # Copiar pd.dll e pd.lib
-            $dllSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.dll" | Select-Object -First 1
-            $libSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.lib" | Select-Object -First 1
-            $libDest = if ($archKey -eq "x64") { $pdLibDir_x64 } else { $pdLibDir_x86 }
-
-            if ($dllSrc -and (-not (Test-Path (Join-Path $libDest "pd.dll")))) {
-                Copy-Item $dllSrc.FullName (Join-Path $libDest "pd.dll") -Force
-                Write-Host "[INFO] pd.dll copiado para $libDest"
-            } else {
-                Write-Host "[INFO] pd.dll já existe em $libDest. Pulando cópia."
-            }
-            if ($libSrc -and (-not (Test-Path (Join-Path $libDest "pd.lib")))) {
-                Copy-Item $libSrc.FullName (Join-Path $libDest "pd.lib") -Force
-                Write-Host "[INFO] pd.lib copiado para $libDest"
-            } else {
-                Write-Host "[INFO] pd.lib já existe em $libDest. Pulando cópia."
-            }
-
-            # Copiar m_pd.h para include (apenas uma vez, x64 tem prioridade)
-            $hSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "m_pd.h" | Select-Object -First 1
-            if ($hSrc -and (-not (Test-Path (Join-Path $pdIncludeDir "m_pd.h")))) {
-                Copy-Item $hSrc.FullName (Join-Path $pdIncludeDir "m_pd.h") -Force
-                Write-Host "[INFO] m_pd.h copiado para $pdIncludeDir"
-            } elseif (Test-Path (Join-Path $pdIncludeDir "m_pd.h")) {
-                Write-Host "[INFO] m_pd.h já existe em $pdIncludeDir. Pulando cópia."
-            }
-
-            # Remover temporários
-            Remove-Item $extractDir -Recurse -Force
-        } else {
-            Write-Host "[AVISO] Asset $zipName não encontrado na release. Baixe manualmente se necessário." -ForegroundColor Yellow
+    # Extrai versões e filtra nomes válidos
+    $versionRegex = "pd-(\d+\.\d+-\d+)"
+    $versions = @()
+    foreach ($file in $files) {
+        if ($file -match $versionRegex) {
+            $ver = $matches[1]
+            $versions += [PSCustomObject]@{ File = $file; Version = $ver }
         }
     }
+
+    # Ordena por versão (maior primeiro)
+    function Compare-PdVersion($a, $b) {
+        $aParts = $a.Version -split "[-\.]"
+        $bParts = $b.Version -split "[-\.]"
+        for ($i=0; $i -lt [Math]::Max($aParts.Count, $bParts.Count); $i++) {
+            $aVal = if ($i -lt $aParts.Count) { [int]$aParts[$i] } else { 0 }
+            $bVal = if ($i -lt $bParts.Count) { [int]$bParts[$i] } else { 0 }
+            if ($aVal -ne $bVal) { return $bVal - $aVal }
+        }
+        return 0
+    }
+    $latest = $versions | Sort-Object -Property @{Expression={$_}; Descending=$true} -Comparer { Compare-PdVersion $args[0] $args[1] } | Select-Object -First 1
+
+    if (-not $latest) {
+        throw "Nenhuma versão estável encontrada."
+    }
+
+    $latestVersion = $latest.Version
+    Write-Host "[INFO] Versão mais recente detectada: $latestVersion" -ForegroundColor Green
+
+    # Monta nomes dos arquivos
+    $zipNames = @{
+        "x64" = "pd-$latestVersion.msw.zip"
+        "x86" = "pd-$latestVersion-i386.msw.zip"
+    }
+
+    foreach ($archKey in $zipNames.Keys) {
+        $zipName = $zipNames[$archKey]
+        $zipUrl = "$baseUrl/$zipName"
+        $zipPath = Join-Path $pdSdkDir $zipName
+
+        if (-not (Test-Path $zipPath)) {
+            Write-Host "[INFO] Baixando $zipName de $zipUrl ..." -ForegroundColor Cyan
+            try {
+                Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -ErrorAction Stop
+                Write-Host "[INFO] Download de $zipName concluído." -ForegroundColor Green
+            } catch {
+                Write-Host "[ERRO] Falha ao baixar $zipName de $zipUrl. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "[DICA] Baixe manualmente o arquivo em: $zipUrl" -ForegroundColor Yellow
+                continue
+            }
+        } else {
+            Write-Host "[INFO] $zipName já existe. Pulando download."
+        }
+
+        # Extrair arquivos necessários
+        $extractDir = Join-Path $pdSdkDir "tmp_$archKey"
+        if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+        # Copiar pd.dll e pd.lib
+        $dllSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.dll" | Select-Object -First 1
+        $libSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.lib" | Select-Object -First 1
+        $libDest = if ($archKey -eq "x64") { $pdLibDir_x64 } else { $pdLibDir_x86 }
+
+        if ($dllSrc -and (-not (Test-Path (Join-Path $libDest "pd.dll")))) {
+            Copy-Item $dllSrc.FullName (Join-Path $libDest "pd.dll") -Force
+            Write-Host "[INFO] pd.dll copiado para $libDest"
+        } else {
+            Write-Host "[INFO] pd.dll já existe em $libDest. Pulando cópia."
+        }
+        if ($libSrc -and (-not (Test-Path (Join-Path $libDest "pd.lib")))) {
+            Copy-Item $libSrc.FullName (Join-Path $libDest "pd.lib") -Force
+            Write-Host "[INFO] pd.lib copiado para $libDest"
+        } else {
+            Write-Host "[INFO] pd.lib já existe em $libDest. Pulando cópia."
+        }
+
+        # Copiar m_pd.h para include (apenas uma vez, x64 tem prioridade)
+        $hSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "m_pd.h" | Select-Object -First 1
+        if ($hSrc -and (-not (Test-Path (Join-Path $pdIncludeDir "m_pd.h")))) {
+            Copy-Item $hSrc.FullName (Join-Path $pdIncludeDir "m_pd.h") -Force
+            Write-Host "[INFO] m_pd.h copiado para $pdIncludeDir"
+        } elseif (Test-Path (Join-Path $pdIncludeDir "m_pd.h")) {
+            Write-Host "[INFO] m_pd.h já existe em $pdIncludeDir. Pulando cópia."
+        }
+
+        # Remover temporários
+        Remove-Item $extractDir -Recurse -Force
+    }
 } catch {
-    Write-Host "[ERRO] Falha ao acessar a API de releases do Pure Data: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "[DICA] Baixe manualmente os arquivos .msw.zip da página de releases: https://github.com/pure-data/pure-data/releases/latest" -ForegroundColor Yellow
+    Write-Host "[ERRO] Falha ao buscar ou baixar Pure Data. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[DICA] Verifique sua conexão ou baixe manualmente os binários em $baseUrl" -ForegroundColor Yellow
 }
 
 # Configurar variáveis de ambiente para build conforme arquitetura
