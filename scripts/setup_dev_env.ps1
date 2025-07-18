@@ -257,100 +257,104 @@ try {
     exit 1
 }
 
-# --- Etapa 7: Download e Organização dos Arquivos Pure Data ---
-Write-Host "[INFO] Etapa 7: Baixando e organizando arquivos do Pure Data..." -ForegroundColor Green
+# --- Etapa 7: Automação Pure Data SDK (x64/x86) ---
+Write-Host "[INFO] Etapa 7: Baixando e organizando SDK do Pure Data..." -ForegroundColor Green
 
-$pdResourcesDir = Join-Path $repoRoot "Resources\puredata"
-if (-not (Test-Path $pdResourcesDir)) {
-    Write-Host "[INFO] Criando diretório Resources\puredata..." -ForegroundColor Cyan
-    New-Item -ItemType Directory -Path $pdResourcesDir | Out-Null
+$pdSdkDir = Join-Path $repoRoot "pd_sdk"
+$pdIncludeDir = Join-Path $pdSdkDir "include"
+$pdLibDir_x64 = Join-Path $pdSdkDir "lib\x64"
+$pdLibDir_x86 = Join-Path $pdSdkDir "lib\x86"
+
+foreach ($dir in @($pdSdkDir, $pdIncludeDir, $pdLibDir_x64, $pdLibDir_x86)) {
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir | Out-Null
+    }
 }
 
-# Baixar m_pd.h
-$mPdUrl = "https://raw.githubusercontent.com/pure-data/pure-data/master/src/m_pd.h"
-$mPdDest = Join-Path $pdResourcesDir "m_pd.h"
-if (-not (Test-Path $mPdDest)) {
-    Write-Host "[INFO] Baixando m_pd.h..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $mPdUrl -OutFile $mPdDest
-} else {
-    Write-Host "[INFO] m_pd.h já existe. Pulando download."
-}
-
-# Baixar pd.dll ou pd64.dll (última release) com tratamento robusto
+# Obter última release estável do Pure Data
 $releaseApi = "https://api.github.com/repos/pure-data/pure-data/releases/latest"
 try {
     $releaseInfo = Invoke-RestMethod -Uri $releaseApi -ErrorAction Stop
-    $pd64Asset = $releaseInfo.assets | Where-Object { $_.name -eq "pd64.dll" }
-    $pdAsset = $releaseInfo.assets | Where-Object { $_.name -eq "pd.dll" }
-    $selectedAsset = $null
+    $assets = $releaseInfo.assets
 
-    if ($arch -eq "x86_64" -and $pd64Asset) {
-        $selectedAsset = $pd64Asset
-    } elseif ($pdAsset) {
-        $selectedAsset = $pdAsset
+    $archMap = @{
+        "x64" = "windows-x64.msw.zip"
+        "x86" = "windows.msw.zip"
     }
 
-    if ($selectedAsset) {
-        $dllDest = Join-Path $pdResourcesDir $selectedAsset.name
-        if (-not (Test-Path $dllDest)) {
-            Write-Host "[INFO] Baixando $($selectedAsset.name)..." -ForegroundColor Cyan
-            try {
-                Invoke-WebRequest -Uri $selectedAsset.browser_download_url -OutFile $dllDest -ErrorAction Stop
-                Write-Host "[INFO] Download de $($selectedAsset.name) concluído." -ForegroundColor Green
-            } catch {
-                Write-Host "[ERRO] Falha ao baixar $($selectedAsset.name): $($_.Exception.Message)" -ForegroundColor Red
-                Write-Host "[DICA] Baixe manualmente o binário da release oficial do Pure Data e coloque em '$pdResourcesDir'." -ForegroundColor Yellow
+    foreach ($archKey in $archMap.Keys) {
+        $zipName = $archMap[$archKey]
+        $asset = $assets | Where-Object { $_.name -eq $zipName }
+        if ($asset) {
+            $zipPath = Join-Path $pdSdkDir $zipName
+            if (-not (Test-Path $zipPath)) {
+                Write-Host "[INFO] Baixando $zipName..." -ForegroundColor Cyan
+                Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -ErrorAction Stop
+            } else {
+                Write-Host "[INFO] $zipName já existe. Pulando download."
             }
+
+            # Extrair arquivos necessários
+            $extractDir = Join-Path $pdSdkDir "tmp_$archKey"
+            if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+            Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+            # Copiar pd.dll e pd.lib
+            $dllSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.dll" | Select-Object -First 1
+            $libSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.lib" | Select-Object -First 1
+            $libDest = if ($archKey -eq "x64") { $pdLibDir_x64 } else { $pdLibDir_x86 }
+
+            if ($dllSrc -and (-not (Test-Path (Join-Path $libDest "pd.dll")))) {
+                Copy-Item $dllSrc.FullName (Join-Path $libDest "pd.dll") -Force
+                Write-Host "[INFO] pd.dll copiado para $libDest"
+            } else {
+                Write-Host "[INFO] pd.dll já existe em $libDest. Pulando cópia."
+            }
+            if ($libSrc -and (-not (Test-Path (Join-Path $libDest "pd.lib")))) {
+                Copy-Item $libSrc.FullName (Join-Path $libDest "pd.lib") -Force
+                Write-Host "[INFO] pd.lib copiado para $libDest"
+            } else {
+                Write-Host "[INFO] pd.lib já existe em $libDest. Pulando cópia."
+            }
+
+            # Copiar m_pd.h para include (apenas uma vez, x64 tem prioridade)
+            $hSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "m_pd.h" | Select-Object -First 1
+            if ($hSrc -and (-not (Test-Path (Join-Path $pdIncludeDir "m_pd.h")))) {
+                Copy-Item $hSrc.FullName (Join-Path $pdIncludeDir "m_pd.h") -Force
+                Write-Host "[INFO] m_pd.h copiado para $pdIncludeDir"
+            } elseif (Test-Path (Join-Path $pdIncludeDir "m_pd.h")) {
+                Write-Host "[INFO] m_pd.h já existe em $pdIncludeDir. Pulando cópia."
+            }
+
+            # Remover temporários
+            Remove-Item $extractDir -Recurse -Force
         } else {
-            Write-Host "[INFO] $($selectedAsset.name) já existe. Pulando download."
+            Write-Host "[AVISO] Asset $zipName não encontrado na release. Baixe manualmente se necessário." -ForegroundColor Yellow
         }
-    } else {
-        Write-Host "[AVISO] Nenhum binário pd.dll/pd64.dll encontrado para sua arquitetura na última release do Pure Data." -ForegroundColor Yellow
-        Write-Host "[DICA] Baixe manualmente o binário adequado da página de releases: https://github.com/pure-data/pure-data/releases/latest" -ForegroundColor Yellow
     }
 } catch {
     Write-Host "[ERRO] Falha ao acessar a API de releases do Pure Data: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "[DICA] Verifique sua conexão ou baixe manualmente o binário pd.dll/pd64.dll." -ForegroundColor Yellow
+    Write-Host "[DICA] Baixe manualmente os arquivos .msw.zip da página de releases: https://github.com/pure-data/pure-data/releases/latest" -ForegroundColor Yellow
 }
 
-# Copiar arquivos de ajuda .pd
-$helpFiles = Get-ChildItem -Path (Join-Path $repoRoot "Sources\py4pd") -Filter "*-help.pd"
-foreach ($file in $helpFiles) {
-    $dest = Join-Path $pdResourcesDir $file.Name
-    Copy-Item $file.FullName $dest -Force
-    Write-Host "[INFO] Copiado $($file.Name) para Resources\puredata."
+# Configurar variáveis de ambiente para build conforme arquitetura
+if ($arch -eq "x86_64") {
+    $env:PD_SDK_LIBDIR = $pdLibDir_x64
+} elseif ($arch -eq "x86") {
+    $env:PD_SDK_LIBDIR = $pdLibDir_x86
 }
-# Copiar py4pd-help.pd se existir
-$py4pdHelp = Join-Path $repoRoot "Resources\py4pd-help.pd"
-if (Test-Path $py4pdHelp) {
-    Copy-Item $py4pdHelp (Join-Path $pdResourcesDir "py4pd-help.pd") -Force
-    Write-Host "[INFO] Copiado py4pd-help.pd para Resources\puredata."
-}
+$env:PD_SDK_INCLUDEDIR = $pdIncludeDir
 
-# Configurar variáveis de ambiente para build
-$env:PD_SOURCES_PATH = $mPdDest
-$env:PDBINDIR = if (Test-Path (Join-Path $pdResourcesDir "pd64.dll")) { Join-Path $pdResourcesDir "pd64.dll" } else { Join-Path $pdResourcesDir "pd.dll" }
-$env:PDLIBDIR = $pdResourcesDir
-
-# Atualizar .gitignore
-$gitignorePath = Join-Path $repoRoot ".gitignore"
-$gitignoreEntry = "Resources/puredata/*"
-if (-not (Get-Content $gitignorePath | Select-String -Pattern [regex]::Escape($gitignoreEntry))) {
-    Add-Content -Path $gitignorePath -Value $gitignoreEntry
-    Write-Host "[INFO] Adicionado Resources/puredata/* ao .gitignore."
-}
-
-# --- Mensagem Final ---
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
-Write-Host "[SUCESSO] O ambiente de desenvolvimento foi configurado!" -ForegroundColor Green
-Write-Host "Ferramentas de Build: CMake, MinGW"
-Write-Host "Ambiente Python: Criado em '.\.venv' com Python $pythonVersion"
-Write-Host "Dependências Python: Instaladas"
-Write-Host "Arquivos Pure Data: Baixados e organizados em Resources\puredata"
+Write-Host "[SUCESSO] SDK Pure Data baixado, extraído e organizado em pd_sdk/" -ForegroundColor Green
+Write-Host "Arquiteturas: x64 e x86"
+Write-Host "Include: $pdIncludeDir"
+Write-Host "Lib x64: $pdLibDir_x64"
+Write-Host "Lib x86: $pdLibDir_x86"
 Write-Host ""
 Write-Host "Próximos passos:" -ForegroundColor Cyan
-Write-Host "1. Você pode fechar e reabrir seu terminal para garantir que todas as variáveis de ambiente sejam carregadas."
-Write-Host "2. Siga as instruções de compilação do projeto (ex: cmake -B build)."
+Write-Host "1. Compile usando as variáveis de ambiente PD_SDK_LIBDIR e PD_SDK_INCLUDEDIR."
+Write-Host "2. Siga as instruções de build do projeto."
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
 
 exit 0
