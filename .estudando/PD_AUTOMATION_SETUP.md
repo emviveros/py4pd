@@ -51,14 +51,18 @@ graph TD
 
 ### Passo 2.1: Lógica de Identificação de URL
 
-O script identificará as URLs para ambas as arquiteturas:
+O script identificará as URLs para todas as arquiteturas Windows suportadas:
 
--   **64-bit (x64):**
-    -   **Padrão do arquivo:** `pd-VERSION.msw.zip`
-    -   **Critérios de filtro:** Termina com `.msw.zip`, não contém `test`, não contém `i386`.
--   **32-bit (x86):**
-    -   **Padrão do arquivo:** `pd-VERSION-i386.msw.zip`
-    -   **Critérios de filtro:** Termina com `.msw.zip`, não contém `test`, **contém** `i386`.
+- **Arquiteturas contempladas:**
+  - x64 (64-bit): arquivos padrão `pd-VERSAO.msw.zip` (não contém `test`, não contém `i386`)
+  - x86/i386 (32-bit): arquivos padrão `pd-VERSAO-i386.msw.zip` (não contém `test`, contém `i386`)
+  - Outras variantes Windows: se surgirem novos padrões, devem ser incluídos conforme a lógica de filtragem por sufixo e prefixo.
+
+-   **Lógica de seleção da versão mais recente:**
+    - Listar todos os arquivos `.msw.zip` disponíveis.
+    - Ignorar arquivos que contenham `test` no nome.
+    - Para cada arquitetura, extrair o número da versão (`VERSAO`) e comparar para selecionar a maior versão disponível.
+    - Garantir que, se houver mais de um padrão para Windows, todos sejam contemplados e organizados conforme a estrutura de diretórios.
 
 ### Passo 2.2: Extração e Organização
 
