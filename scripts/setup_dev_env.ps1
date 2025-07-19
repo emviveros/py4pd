@@ -159,101 +159,68 @@ Write-Host "[DEBUG] Diretório '$uvDir' adicionado ao PATH da sessão."
 
 # --- Etapa 6: Configurar Ambiente Python com 'uv' ---
 Write-Host "[INFO] Etapa 6: Configurando ambiente Python com 'uv'..." -ForegroundColor Green
-$pythonVersion = "3.11"
-$venvDir = Join-Path $repoRoot ".venv"
+# Multi-venv para múltiplas versões de Python
+$PY_VERSIONS = @("3.11", "3.12")
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $lockFile = Join-Path $repoRoot "uv.lock"
+$envVarsBat = Join-Path $repoRoot "scripts\env_vars.bat"
 
-# --- Detecção e encerramento de processos bloqueando .venv ---
-if (Test-Path $venvDir) {
-    Write-Host "[INFO] Ambiente virtual existente detectado em '$venvDir'. Verificando processos que possam estar bloqueando..." -ForegroundColor Yellow
+# --- Preparação do env_vars.bat ---
+Write-Host "[INFO] Inicializando 'scripts\env_vars.bat' para o script de build..." -ForegroundColor Cyan
+if (Test-Path $envVarsBat) { Remove-Item $envVarsBat }
+Set-Content -Path $envVarsBat -Value "@echo off"
+Add-Content -Path $envVarsBat -Value "echo [INFO] Variáveis de ambiente para build configuradas por setup_dev_env.ps1"
 
-    $processNames = @("python.exe", "uv.exe", "pip.exe")
-    $blockedPids = @()
-    $blockedProcs = @()
-
-    # Tenta usar Sysinternals Handle se disponível para detecção precisa
-    $handleExe = "handle.exe"
-    $handleCmd = Get-Command $handleExe -ErrorAction SilentlyContinue
-    if ($handleCmd) {
-        Write-Host "[DEBUG] Utilizando Sysinternals Handle para detecção de bloqueio..." -ForegroundColor Cyan
-        $handleOutput = & $handleExe $venvDir 2>&1
-        foreach ($line in $handleOutput) {
-            if ($line -match "pid: (\d+)") {
-                $processId = $matches[1]
-                $proc = Get-Process -Id $processId -ErrorAction SilentlyContinue
-                if ($proc -and $processNames -contains $proc.Name.ToLower() + ".exe") {
-                    $blockedPids += $processId
-                    $blockedProcs += $proc
-                }
-            }
-        }
-    } else {
-        Write-Host "[DEBUG] Sysinternals Handle não encontrado. Usando fallback por caminho e nome de processo..." -ForegroundColor Yellow
-        foreach ($proc in Get-Process | Where-Object { $processNames -contains ($_.Name.ToLower() + ".exe") }) {
-            try {
-                $procModules = $proc.Modules | Where-Object { $_.FileName -like "$venvDir*" }
-                if ($procModules) {
-                    $blockedPids += $proc.Id
-                    $blockedProcs += $proc
-                }
-            } catch {}
-        }
-    }
-
-    if ($blockedPids.Count -gt 0) {
-        Write-Host "[AVISO] Encontrados processos bloqueando arquivos em .venv:" -ForegroundColor Yellow
-        foreach ($proc in $blockedProcs) {
-            Write-Host ("    - {0} (PID {1})" -f $proc.Name, $proc.Id) -ForegroundColor Magenta
-            try {
-                Stop-Process -Id $proc.Id -Force
-                Write-Host ("    [OK] Processo encerrado: {0} (PID {1})" -f $proc.Name, $proc.Id) -ForegroundColor Green
-            } catch {
-                Write-Host ("    [ERRO] Falha ao encerrar {0} (PID {1}): {2}" -f $proc.Name, $proc.Id, $_.Exception.Message) -ForegroundColor Red
-            }
-        }
-        Start-Sleep -Seconds 2
-    } else {
-        Write-Host "[INFO] Nenhum processo bloqueando arquivos em .venv detectado." -ForegroundColor Green
-    }
-
-    Write-Host "[INFO] Removendo .venv..." -ForegroundColor Yellow
-    try {
-        Remove-Item $venvDir -Recurse -Force -ErrorAction Stop
-        Write-Host "[INFO] Ambiente virtual removido com sucesso." -ForegroundColor Green
-    } catch {
-        Write-Host "[ERRO] Falha ao remover '$venvDir'. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "[DICA] Verifique se algum processo está usando arquivos dentro de .venv e tente novamente." -ForegroundColor Yellow
-        exit 1
-    }
+# Adiciona MinGW ao PATH do script de build
+$gccPath = (Get-Command gcc.exe -ErrorAction SilentlyContinue).Source
+if ($gccPath) {
+    $mingwDir = Split-Path $gccPath -Parent
+    Add-Content -Path $envVarsBat -Value "set PATH=$mingwDir;%PATH%"
 }
 
-try {
-    Write-Host "[INFO] Criando ambiente virtual em '$venvDir' com Python $pythonVersion..." -ForegroundColor Cyan
-    & $uvExe venv --python $pythonVersion $venvDir
-    Write-Host "[INFO] Ambiente virtual criado." -ForegroundColor Green
-
-    # Validar pyvenv.cfg
-    $pyvenvCfg = Join-Path $venvDir "pyvenv.cfg"
-    if (-not (Test-Path $pyvenvCfg)) {
-        Write-Host "[ERRO] Ambiente virtual criado, mas 'pyvenv.cfg' está ausente. Ambiente corrompido." -ForegroundColor Red
+# --- Loop de Criação dos Ambientes Python ---
+foreach ($V in $PY_VERSIONS) {
+    $venvDir = Join-Path $repoRoot ".venv-$V"
+    if (Test-Path $venvDir) {
+        Write-Host "[INFO] Removendo ambiente virtual antigo '$venvDir'..." -ForegroundColor Yellow
+        Remove-Item $venvDir -Recurse -Force
+    }
+    
+    Write-Host "[INFO] Criando ambiente virtual em '$venvDir' com Python $V..." -ForegroundColor Cyan
+    & $uvExe venv --python $V $venvDir
+    
+    if (-not (Test-Path (Join-Path $venvDir "pyvenv.cfg"))) {
+        Write-Host "[ERRO] Falha ao criar ambiente para Python $V." -ForegroundColor Red
         exit 1
-    } else {
-        Write-Host "[INFO] 'pyvenv.cfg' detectado. Ambiente virtual íntegro." -ForegroundColor Green
     }
+    Write-Host "[INFO] Ambiente virtual para Python $V criado com sucesso."
 
-    if (Test-Path $lockFile) {
-        Write-Host "[INFO] Detectado uv.lock - sincronizando dependências..." -ForegroundColor Cyan
-        & $uvExe pip sync $lockFile
-        Write-Host "[INFO] Dependências sincronizadas com sucesso via uv.lock" -ForegroundColor Green
-    } else {
-        Write-Host "[INFO] uv.lock não encontrado - instalando dependências do pyproject.toml..." -ForegroundColor Cyan
-        & $uvExe pip install --requirements $pyprojectFile
-        Write-Host "[INFO] Dependências instaladas com sucesso via pyproject.toml" -ForegroundColor Green
+    # Define VIRTUAL_ENV para que o uv global saiba onde instalar
+    $oldVirtualEnv = $env:VIRTUAL_ENV
+    $env:VIRTUAL_ENV = $venvDir
+    
+    try {
+        if (Test-Path $lockFile) {
+            Write-Host "[INFO] Instalando dependências de 'uv.lock' para Python $V..." -ForegroundColor Cyan
+            & $uvExe pip sync $lockFile
+        } elseif (Test-Path $pyprojectFile) {
+            Write-Host "[INFO] Instalando dependências de 'pyproject.toml' para Python $V..." -ForegroundColor Cyan
+            & $uvExe pip install -r $pyprojectFile
+        } else {
+            Write-Host "[AVISO] Nenhum arquivo de dependência (uv.lock, pyproject.toml) encontrado." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[ERRO] Falha ao instalar dependências para Python $V. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
+    } finally {
+        # Restaura a variável de ambiente para evitar efeitos colaterais
+        $env:VIRTUAL_ENV = $oldVirtualEnv
     }
-} catch {
-    Write-Host "[ERRO] Falha ao configurar o ambiente Python com 'uv'. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+    
+    # Exporta o caminho do executável Python para o env_vars.bat
+    $pythonExe = Join-Path $venvDir "Scripts\python.exe"
+    $varName = "PYTHON${V.Replace('.','')}_EXE"
+    Add-Content -Path $envVarsBat -Value "set $varName=$pythonExe"
+    Write-Host "[INFO] Variável '$varName' adicionada a env_vars.bat" -ForegroundColor Green
 }
 
 # --- Etapa 7: Automação Pure Data SDK (x64/x86) ---
@@ -263,6 +230,11 @@ $pdSdkDir = Join-Path $repoRoot "pd_sdk"
 $pdIncludeDir = Join-Path $pdSdkDir "include"
 $pdLibDir_x64 = Join-Path $pdSdkDir "lib\x64"
 $pdLibDir_x86 = Join-Path $pdSdkDir "lib\x86"
+
+# Adiciona caminhos do SDK do Pd ao env_vars.bat
+Add-Content -Path $envVarsBat -Value "set PD_SDK_INCLUDE_DIR=$pdIncludeDir"
+Add-Content -Path $envVarsBat -Value "set PD_SDK_LIB_DIR_X64=$pdLibDir_x64"
+Add-Content -Path $envVarsBat -Value "set PD_SDK_LIB_DIR_X86=$pdLibDir_x86"
 
 foreach ($dir in @($pdSdkDir, $pdIncludeDir, $pdLibDir_x64, $pdLibDir_x86)) {
     if (-not (Test-Path $dir)) {
@@ -328,77 +300,77 @@ try {
             Write-Host "[INFO] $zipName já existe. Pulando download."
         }
 
-        # Extrair arquivos necessários
-        $extractDir = Join-Path $pdSdkDir "tmp_$archKey"
-        if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
-        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+        # Só extrai se algum dos arquivos binários ou cabeçalho estiver faltando E o zip existe
+        $dllDest = if ($archKey -eq "x64") { Join-Path $pdLibDir_x64 "pd.dll" } else { Join-Path $pdLibDir_x86 "pd.dll" }
+        $libDest = if ($archKey -eq "x64") { Join-Path $pdLibDir_x64 "pd.lib" } else { Join-Path $pdLibDir_x86 "pd.lib" }
+        $mPdHDest = Join-Path $pdIncludeDir "m_pd.h"
+        $gCanvasHDest = Join-Path $pdIncludeDir "g_canvas.h"
 
-        # Copiar pd.dll e pd.lib
-        $dllSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.dll" | Select-Object -First 1
-        $libSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.lib" | Select-Object -First 1
-        $libDest = if ($archKey -eq "x64") { $pdLibDir_x64 } else { $pdLibDir_x86 }
+        $needExtract = $false
+        if (-not (Test-Path $dllDest)) { $needExtract = $true }
+        if (-not (Test-Path $libDest)) { $needExtract = $true }
+        if (-not (Test-Path $mPdHDest)) { $needExtract = $true }
+        if (-not (Test-Path $gCanvasHDest)) { $needExtract = $true }
 
-        if ($dllSrc -and (-not (Test-Path (Join-Path $libDest "pd.dll")))) {
-            Copy-Item $dllSrc.FullName (Join-Path $libDest "pd.dll") -Force
-            Write-Host "[INFO] pd.dll copiado para $libDest"
+        if ($needExtract -and (Test-Path $zipPath)) {
+            Write-Host "[INFO] Extraindo $zipName pois um ou mais arquivos do SDK estão faltando..." -ForegroundColor Cyan
+            $extractDir = Join-Path $pdSdkDir "tmp_$archKey"
+            if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+            Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+            # Copiar pd.dll e pd.lib
+            $dllSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.dll" | Select-Object -First 1
+            $libSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "pd.lib" | Select-Object -First 1
+
+            if ($dllSrc -and (-not (Test-Path $dllDest))) {
+                Copy-Item $dllSrc.FullName $dllDest -Force
+                Write-Host "[INFO] pd.dll copiado para $dllDest"
+            }
+            if ($libSrc -and (-not (Test-Path $libDest))) {
+                Copy-Item $libSrc.FullName $libDest -Force
+                Write-Host "[INFO] pd.lib copiado para $libDest"
+            }
+            
+            # Função auxiliar para copiar cabeçalhos para a pasta include
+            function Copy-HeaderFile {
+                param(
+                    [string]$HeaderName,
+                    [string]$SourceDir,
+                    [string]$DestDir
+                )
+                $headerDest = Join-Path $DestDir $HeaderName
+                if (-not (Test-Path $headerDest)) {
+                    $headerSrc = Get-ChildItem -Path $SourceDir -Recurse -Filter $HeaderName | Select-Object -First 1
+                    if ($headerSrc) {
+                        Copy-Item $headerSrc.FullName $headerDest -Force
+                        Write-Host "[INFO] '$HeaderName' copiado para '$DestDir'."
+                    }
+                }
+            }
+
+            # Copiar cabeçalhos se não existirem
+            Copy-HeaderFile -HeaderName "m_pd.h" -SourceDir $extractDir -DestDir $pdIncludeDir
+            Copy-HeaderFile -HeaderName "g_canvas.h" -SourceDir $extractDir -DestDir $pdIncludeDir
+
+            # Remover temporários
+            Remove-Item $extractDir -Recurse -Force
         } else {
-            Write-Host "[INFO] pd.dll já existe em $libDest. Pulando cópia."
+            Write-Host "[INFO] Todos os arquivos do SDK já presentes para $archKey. Pulando extração de $zipName."
         }
-        if ($libSrc -and (-not (Test-Path (Join-Path $libDest "pd.lib")))) {
-            Copy-Item $libSrc.FullName (Join-Path $libDest "pd.lib") -Force
-            Write-Host "[INFO] pd.lib copiado para $libDest"
-        } else {
-            Write-Host "[INFO] pd.lib já existe em $libDest. Pulando cópia."
-        }
-
-        # Copiar m_pd.h para include (apenas uma vez, x64 tem prioridade)
-        $hSrc = Get-ChildItem -Path $extractDir -Recurse -Filter "m_pd.h" | Select-Object -First 1
-        if ($hSrc -and (-not (Test-Path (Join-Path $pdIncludeDir "m_pd.h")))) {
-            Copy-Item $hSrc.FullName (Join-Path $pdIncludeDir "m_pd.h") -Force
-            Write-Host "[INFO] m_pd.h copiado para $pdIncludeDir"
-        } elseif (Test-Path (Join-Path $pdIncludeDir "m_pd.h")) {
-            Write-Host "[INFO] m_pd.h já existe em $pdIncludeDir. Pulando cópia."
-        }
-
-        # Remover temporários
-        Remove-Item $extractDir -Recurse -Force
     }
 } catch {
     Write-Host "[ERRO] Falha ao buscar ou baixar Pure Data. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "[DICA] Verifique sua conexão ou baixe manualmente os binários em $baseUrl" -ForegroundColor Yellow
 }
 
-# Configurar variáveis de ambiente para build conforme arquitetura
-if ($arch -eq "x86_64") {
-    $env:PD_SDK_LIBDIR = $pdLibDir_x64
-} elseif ($arch -eq "x86") {
-    $env:PD_SDK_LIBDIR = $pdLibDir_x86
-}
-$env:PD_SDK_INCLUDEDIR = $pdIncludeDir
-
+# --- Etapa Final: Conclusão ---
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
-Write-Host "[SUCESSO] SDK Pure Data baixado, extraído e organizado em pd_sdk/" -ForegroundColor Green
-Write-Host "Arquiteturas: x64 e x86"
-Write-Host "Include: $pdIncludeDir"
-Write-Host "Lib x64: $pdLibDir_x64"
-Write-Host "Lib x86: $pdLibDir_x86"
+Write-Host "[SUCESSO] Script de setup concluído!" -ForegroundColor Green
+Write-Host "Ambientes Python (3.11, 3.12) e SDK do Pure Data (x64, x86) estão prontos."
+Write-Host "O arquivo 'scripts\env_vars.bat' foi gerado para o build."
 Write-Host ""
-Write-Host "Próximos passos:" -ForegroundColor Cyan
-Write-Host "1. Compile usando as variáveis de ambiente PD_SDK_LIBDIR e PD_SDK_INCLUDEDIR."
-Write-Host "2. Siga as instruções de build do projeto."
+Write-Host "Próximo passo:" -ForegroundColor Cyan
+Write-Host "Execute o script de build: .\scripts\build_all.bat"
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
 
-# --- Etapa Final: Exportar variáveis para uso em scripts .bat ---
-$envVarsBat = Join-Path $repoRoot "scripts\env_vars.bat"
-Write-Host "[INFO] Gerando scripts\env_vars.bat para exportar variáveis de ambiente para o build_all.bat..." -ForegroundColor Cyan
-Set-Content -Path $envVarsBat -Value "@echo off"
-Add-Content -Path $envVarsBat -Value "set PD_SDK_LIBDIR=$env:PD_SDK_LIBDIR"
-Add-Content -Path $envVarsBat -Value "set PD_SDK_INCLUDEDIR=$env:PD_SDK_INCLUDEDIR"
-# Detecta MinGW no PATH e exporta diretório principal
-$gccPath = (Get-Command gcc.exe -ErrorAction SilentlyContinue).Source
-if ($gccPath) {
-    $mingwDir = Split-Path $gccPath -Parent
-    Add-Content -Path $envVarsBat -Value "set PATH=$mingwDir;%PATH%"
-}
-Write-Host "[INFO] scripts\env_vars.bat gerado com sucesso."
 exit 0
