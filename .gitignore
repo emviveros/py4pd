@@ -4,7 +4,6 @@ dist/
 *~
 *.html
 *.__pycache__
-.vscode/*
 Python
 bin
 pd/
