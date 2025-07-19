@@ -25,3 +25,4 @@ Resources/puredata/*
 .venv/*
 Resources/puredata/*
 pd_sdk/*
+scripts/env_vars.bat

@@ -1,4 +1,5 @@
 :: Criação dinâmica dos placeholders do bundle moderno do py4pd (Windows)
+:: ATENÇÃO: Build para arm64 NÃO é suportado no Windows. Apenas x64/x86.
 if not exist dist mkdir dist
 type nul > dist\py4pd.dll
 type nul > dist\py4pd.pd_linux
@@ -23,7 +24,7 @@ echo Estes arquivos são placeholders e não possuem implementação funcional.
 ) > dist\README.txt
 @echo off
 setlocal enabledelayedexpansion
-
+call "%~dp0env_vars.bat"
 set PY_VERSIONS=3.11 3.12
 set ROOT_DIR=%~dp0..
 cd /d %ROOT_DIR%
@@ -37,7 +38,7 @@ for %%V in (%PY_VERSIONS%) do (
     set "BUILD_DIR=build\py%%V"
     echo ==^> Compilando para Python %%V
     mkdir "!BUILD_DIR!" 2>nul
-    cmake -B "!BUILD_DIR!" -DPY4PD_PYTHON_VERSION=%%V
+    cmake -B "!BUILD_DIR!" -DPY4PD_PYTHON_VERSION=%%V -DPD_SDK_LIBDIR=%PD_SDK_LIBDIR% -DPD_SDK_INCLUDEDIR=%PD_SDK_INCLUDEDIR%
     cmake --build "!BUILD_DIR!"
     set "FOUND="
     for %%F in (!BUILD_DIR!\py4pd.*) do (

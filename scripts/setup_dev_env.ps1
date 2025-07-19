@@ -388,4 +388,17 @@ Write-Host "1. Compile usando as variáveis de ambiente PD_SDK_LIBDIR e PD_SDK_I
 Write-Host "2. Siga as instruções de build do projeto."
 Write-Host "--------------------------------------------------" -ForegroundColor Yellow
 
+# --- Etapa Final: Exportar variáveis para uso em scripts .bat ---
+$envVarsBat = Join-Path $repoRoot "scripts\env_vars.bat"
+Write-Host "[INFO] Gerando scripts\env_vars.bat para exportar variáveis de ambiente para o build_all.bat..." -ForegroundColor Cyan
+Set-Content -Path $envVarsBat -Value "@echo off"
+Add-Content -Path $envVarsBat -Value "set PD_SDK_LIBDIR=$env:PD_SDK_LIBDIR"
+Add-Content -Path $envVarsBat -Value "set PD_SDK_INCLUDEDIR=$env:PD_SDK_INCLUDEDIR"
+# Detecta MinGW no PATH e exporta diretório principal
+$gccPath = (Get-Command gcc.exe -ErrorAction SilentlyContinue).Source
+if ($gccPath) {
+    $mingwDir = Split-Path $gccPath -Parent
+    Add-Content -Path $envVarsBat -Value "set PATH=$mingwDir;%PATH%"
+}
+Write-Host "[INFO] scripts\env_vars.bat gerado com sucesso."
 exit 0
