@@ -59,6 +59,10 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 Write-Host "[DEBUG] Arquitetura detectada: $arch"
 
+# --- Definição dos Caminhos do SDK do Pure Data ---
+$pdSdkDir = Join-Path $repoRoot "pd_sdk"
+$pdIncludeDir = Join-Path $pdSdkDir "include"
+
 # Trata o caso de Windows 32 bits (x86)
 if ($arch -eq "x86") {
     Write-Host "[AVISO] A ferramenta 'uv' não oferece mais suporte oficial para Windows 32-bit (x86)." -ForegroundColor Yellow
@@ -190,7 +194,10 @@ foreach ($V in $PY_VERSIONS) {
     }
     
     Write-Host "[INFO] Criando ambiente virtual em '$venvDir' com Python $V..." -ForegroundColor Cyan
-    & $uvExe venv --python $V $venvDir
+    Write-Host "[INFO] Instalando Python $V via uv..." -ForegroundColor Cyan
+    & $uvExe python install $V
+    Write-Host "[INFO] Criando ambiente virtual para Python $V..." -ForegroundColor Cyan
+    & $uvExe venv -p $V $venvDir
     
     if (-not (Test-Path (Join-Path $venvDir "pyvenv.cfg"))) {
         Write-Host "[ERRO] Falha ao criar ambiente para Python $V." -ForegroundColor Red
@@ -226,11 +233,49 @@ foreach ($V in $PY_VERSIONS) {
     Write-Host "[INFO] Variável '$varName' adicionada a env_vars.bat" -ForegroundColor Green
 }
 
+# --- Copiar includes do Python (Python.h) para pd_sdk/include/<versao> ---
+Write-Host "[INFO] Copiando headers do Python para o SDK do Pure Data..." -ForegroundColor Green
+foreach ($V in $PY_VERSIONS) {
+    $venvDir = Join-Path $repoRoot ".venv-$V"
+    $pyvenvCfgPath = Join-Path $venvDir "pyvenv.cfg"
+    $pythonHomeDir = $null
+
+    if (Test-Path $pyvenvCfgPath) {
+        try {
+            # Extrai o caminho 'home' do pyvenv.cfg para encontrar a instalação real do Python
+            $pythonHomeDir = Get-Content $pyvenvCfgPath | Where-Object { $_ -match "^home\s*=\s*(.*)" } | ForEach-Object { $matches[1].Trim() }
+        } catch {
+            Write-Warning "[AVISO] Não foi possível ler o pyvenv.cfg para a versão $V."
+        }
+    }
+
+    if ($pythonHomeDir) {
+        $pythonIncludeDir = Join-Path $pythonHomeDir "Include"
+        $pyIncludeVersionDir = Join-Path $pdIncludeDir "python$V"
+    
+        if (Test-Path $pythonIncludeDir) {
+            # Garante que o diretório de destino exista
+            if (-not (Test-Path $pyIncludeVersionDir)) {
+                New-Item -ItemType Directory -Path $pyIncludeVersionDir -Force | Out-Null
+            }
+    
+            # Copia os arquivos .h
+            $files = Get-ChildItem -Path $pythonIncludeDir -Filter "*.h" -File
+            foreach ($file in $files) {
+                Copy-Item $file.FullName $pyIncludeVersionDir -Force
+            }
+            Write-Host "[INFO] Headers do Python ($V) copiados de '$pythonIncludeDir' para '$pyIncludeVersionDir'"
+        } else {
+            Write-Warning "[AVISO] Diretório de includes do Python não encontrado na instalação base para a versão $V em '$pythonIncludeDir'."
+        }
+    } else {
+        Write-Warning "[AVISO] Não foi possível determinar o diretório 'home' do Python para a versão $V. Os headers não serão copiados."
+    }
+}
+
 # --- Etapa 7: Automação Pure Data SDK (x64/x86) ---
 Write-Host "[INFO] Etapa 7: Baixando e organizando SDK do Pure Data..." -ForegroundColor Green
 
-$pdSdkDir = Join-Path $repoRoot "pd_sdk"
-$pdIncludeDir = Join-Path $pdSdkDir "include"
 $pdLibDir_x64 = Join-Path $pdSdkDir "lib\x64"
 $pdLibDir_x86 = Join-Path $pdSdkDir "lib\x86"
 
