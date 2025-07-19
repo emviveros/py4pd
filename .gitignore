@@ -24,3 +24,4 @@ Resources/puredata/*
 # Environment files
 .venv/*
 Resources/puredata/*
+pd_sdk/*
