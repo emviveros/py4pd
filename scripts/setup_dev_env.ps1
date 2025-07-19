@@ -306,14 +306,26 @@ try {
         # Só extrai se algum dos arquivos binários ou cabeçalho estiver faltando E o zip existe
         $dllDest = if ($archKey -eq "x64") { Join-Path $pdLibDir_x64 "pd.dll" } else { Join-Path $pdLibDir_x86 "pd.dll" }
         $libDest = if ($archKey -eq "x64") { Join-Path $pdLibDir_x64 "pd.lib" } else { Join-Path $pdLibDir_x86 "pd.lib" }
-        $mPdHDest = Join-Path $pdIncludeDir "m_pd.h"
-        $gCanvasHDest = Join-Path $pdIncludeDir "g_canvas.h"
+        $headerNames = @(
+            "g_all_guis.h",
+            "g_canvas.h",
+            "g_undo.h",
+            "m_imp.h",
+            "m_pd.h",
+            "sched.h",
+            "semaphore.h",
+            "s_net.h",
+            "s_stuff.h",
+            "x_vexp.h"
+        )
+        $headerDests = $headerNames | ForEach-Object { Join-Path $pdIncludeDir $_ }
 
         $needExtract = $false
         if (-not (Test-Path $dllDest)) { $needExtract = $true }
         if (-not (Test-Path $libDest)) { $needExtract = $true }
-        if (-not (Test-Path $mPdHDest)) { $needExtract = $true }
-        if (-not (Test-Path $gCanvasHDest)) { $needExtract = $true }
+        foreach ($dest in $headerDests) {
+            if (-not (Test-Path $dest)) { $needExtract = $true }
+        }
 
         if ($needExtract -and (Test-Path $zipPath)) {
             Write-Host "[INFO] Extraindo $zipName pois um ou mais arquivos do SDK estão faltando..." -ForegroundColor Cyan
@@ -352,8 +364,9 @@ try {
             }
 
             # Copiar cabeçalhos se não existirem
-            Copy-HeaderFile -HeaderName "m_pd.h" -SourceDir $extractDir -DestDir $pdIncludeDir
-            Copy-HeaderFile -HeaderName "g_canvas.h" -SourceDir $extractDir -DestDir $pdIncludeDir
+            foreach ($header in $headerNames) {
+                Copy-HeaderFile -HeaderName $header -SourceDir $extractDir -DestDir $pdIncludeDir
+            }
 
             # Remover temporários
             Remove-Item $extractDir -Recurse -Force
