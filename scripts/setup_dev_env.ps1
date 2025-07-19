@@ -19,6 +19,9 @@
 #     especificada (ex: Python 3.11).
 # 8.  Instala as dependências Python listadas em 'requirements.txt'.
 # 9.  Fornece logs claros em cada etapa do processo.
+# 10. Verifica e extrai todos os arquivos essenciais do SDK do Pure Data,
+#     incluindo m_pd.h e g_canvas.h, garantindo que estejam presentes em pd_sdk/include.
+#     Se qualquer arquivo estiver faltando, o ZIP é extraído e os cabeçalhos são copiados.
 #
 # Como usar:
 # 1.  Abra o PowerShell como Administrador.
