@@ -79,7 +79,7 @@ if ($arch -eq "x86") {
 Write-Host "[INFO] Etapa 3: Verificando e instalando Chocolatey..." -ForegroundColor Green
 if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Write-Host "[INFO] Chocolatey não encontrado. Instalando..." -ForegroundColor Cyan
-    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         Write-Host "[ERRO] Falha ao instalar o Chocolatey." -ForegroundColor Red
         exit 1
@@ -176,15 +176,14 @@ if (Test-Path $venvDir) {
     $handleExe = "handle.exe"
     $handleCmd = Get-Command $handleExe -ErrorAction SilentlyContinue
     if ($handleCmd) {
-        $handlePath = $handleCmd.Source
         Write-Host "[DEBUG] Utilizando Sysinternals Handle para detecção de bloqueio..." -ForegroundColor Cyan
         $handleOutput = & $handleExe $venvDir 2>&1
         foreach ($line in $handleOutput) {
             if ($line -match "pid: (\d+)") {
-                $pid = $matches[1]
-                $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                $processId = $matches[1]
+                $proc = Get-Process -Id $processId -ErrorAction SilentlyContinue
                 if ($proc -and $processNames -contains $proc.Name.ToLower() + ".exe") {
-                    $blockedPids += $pid
+                    $blockedPids += $processId
                     $blockedProcs += $proc
                 }
             }
@@ -291,17 +290,11 @@ try {
     }
 
     # Ordena por versão (maior primeiro)
-    function Compare-PdVersion($a, $b) {
-        $aParts = $a.Version -split "[-\.]"
-        $bParts = $b.Version -split "[-\.]"
-        for ($i=0; $i -lt [Math]::Max($aParts.Count, $bParts.Count); $i++) {
-            $aVal = if ($i -lt $aParts.Count) { [int]$aParts[$i] } else { 0 }
-            $bVal = if ($i -lt $bParts.Count) { [int]$bParts[$i] } else { 0 }
-            if ($aVal -ne $bVal) { return $bVal - $aVal }
-        }
-        return 0
+    # Ordena as versões convertendo para [System.Version] (substitui '-' por '.')
+    foreach ($v in $versions) {
+        $v | Add-Member -MemberType NoteProperty -Name VersionObj -Value ([System.Version]($v.Version -replace '-', '.'))
     }
-    $latest = $versions | Sort-Object -Property @{Expression={$_}; Descending=$true} -Comparer { Compare-PdVersion $args[0] $args[1] } | Select-Object -First 1
+    $latest = $versions | Sort-Object -Property VersionObj -Descending | Select-Object -First 1
 
     if (-not $latest) {
         throw "Nenhuma versão estável encontrada."
