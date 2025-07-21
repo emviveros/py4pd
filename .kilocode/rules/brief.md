@@ -1,9 +1,13 @@
 # brief.md
 
-Este arquivo orienta a preparação do ambiente e o fluxo de compilação do py4pd, com foco em automação total e reprodutibilidade: todo o setup é realizado por scripts multiplataforma, sem etapas manuais, garantindo builds portáveis e integração direta ao Pure Data.
+Este arquivo orienta a preparação do ambiente e o fluxo de compilação do py4pd, com foco em automação total e reprodutibilidade: todo o setup é realizado por scripts dedicados para cada sistema operacional, sem etapas manuais, garantindo builds portáveis e integração direta ao Pure Data.
 
 **Como usar este arquivo:**
-1. Execute o script de setup correspondente ao seu sistema operacional (`./scripts/setup.sh` para Linux/macOS ou `scripts\setup_dev_env.ps1` para Windows). O script cuidará de toda a configuração do ambiente, instalação de dependências e preparação do build.
+1. Execute o script de setup correspondente ao seu sistema operacional:
+   - Para Linux: `./scripts/setup_dev_env.sh`
+   - Para macOS: `./scripts/setup_dev_env_mac.sh`
+   - Para Windows: `scripts\setup_dev_env.ps1`
+   Cada script cuidará de toda a configuração do ambiente, instalação de dependências e preparação do build para o respectivo sistema.
 2. Após rodar o script, siga as instruções dos tópicos para compilar, validar e distribuir o py4pd.
 3. Use este guia para padronizar o onboarding de novos desenvolvedores e automatizar o build local e em CI/CD.
 
@@ -24,11 +28,16 @@ Desenvolvedores, mantenedores e colaboradores do py4pd, especialmente quem preci
 - Adotar boas práticas para builds determinísticos, versionamento e testes automatizados.
 
 **Pré-requisitos e configuração do ambiente:**
-- Basta rodar o script de setup adequado ao seu sistema operacional. Ele irá:
-  - Detectar o SO e instalar automaticamente CMake (>=3.15), compilador C (GCC, Clang ou MSVC), Pure Data, `uv` e demais dependências.
-  - Clonar o repositório (se necessário) e garantir acesso ao subdiretório `Sources/`.
-  - Configurar variáveis de ambiente e preparar todos os arquivos essenciais (`CMakeLists.txt`, `Makefile`, scripts auxiliares).
-  - Criar o ambiente Python reprodutível e instalar dependências.
+- Basta rodar o script de setup dedicado ao seu sistema operacional:
+  - Linux: `./scripts/setup_dev_env.sh`
+  - macOS: `./scripts/setup_dev_env_mac.sh`
+  - Windows: `scripts\setup_dev_env.ps1`
+  Cada script irá:
+    - Instalar automaticamente CMake (>=3.15), compilador C (GCC, Clang ou MSVC), Pure Data, `uv` e demais dependências.
+    - Clonar o repositório (se necessário) e garantir acesso ao subdiretório `Sources/`.
+    - Configurar variáveis de ambiente e preparar todos os arquivos essenciais (`CMakeLists.txt`, `Makefile`, scripts auxiliares).
+    - Criar o ambiente Python reprodutível e instalar dependências.
+    - **No Windows, o script gera automaticamente o arquivo `scripts/env_vars.bat` contendo as variáveis de ambiente essenciais para o processo de build. Recomenda-se que os scripts de setup para Linux e macOS adotem padrão equivalente (por exemplo, geração de `env_vars.sh`), garantindo integração e reprodutibilidade entre plataformas. Toda a documentação e exemplos futuros devem seguir esse padrão para facilitar a manutenção e o onboarding.**
 - Não é necessário realizar etapas manuais de instalação ou configuração.
 
 **Comandos essenciais e fluxo de build:**
@@ -51,7 +60,7 @@ Desenvolvedores, mantenedores e colaboradores do py4pd, especialmente quem preci
 
 **Boas práticas e recomendações:**
 - Sempre utilize o script de setup para garantir ambiente padronizado e reprodutível.
-- Scripts devem ser idempotentes e multiplataforma, podendo ser usados tanto localmente quanto em CI/CD (ex: GitHub Actions).
+- Scripts devem ser idempotentes e específicos para cada sistema operacional, podendo ser usados tanto localmente quanto em CI/CD (ex: GitHub Actions).
 - Documente e versiona scripts e configurações de ambiente.
 - Use o `uv` para garantir ambientes Python idênticos em todos os desenvolvedores e pipelines.
 - Teste o external no Pure Data após cada build, validando integração e funcionamento.
