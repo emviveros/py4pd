@@ -117,7 +117,7 @@ PyObject *pdpyobj_get_pyclass(t_pdpy_pdobj *x, const char *classname, PyObject *
 
     if (PyBool_Check(pyisgui)) {
         x->has_gui = true;
-        pd_snprintf(x->object_tag, 128, ".x%lx", (long)x);
+        pd_snprintf(x->object_tag, 128, ".x%p", (void *)x);
         x->object_tag[127] = '\0';
     }
 
