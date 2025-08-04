@@ -105,12 +105,17 @@ endif()
 # ╰──────────────────────────────────────╯
 if(WIN32)
     execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('BINDIR'))"
-        OUTPUT_VARIABLE PYTHON_BIN_DIR
+        COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('stdlib'))"
+        OUTPUT_VARIABLE PYTHON_STDLIB_DIR
         OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE EXEC_RESULT)
+    # No Windows, as bibliotecas estão no diretório 'libs' da instalação Python
+    get_filename_component(PYTHON_BASE_DIR "${PYTHON_STDLIB_DIR}" DIRECTORY)
+    set(PYTHON_LIB_DIR "${PYTHON_BASE_DIR}/libs")
     string(REPLACE "." "" PYVERSION_NO_DOT ${PYVERSION})
-    set(PYTHON_LD_FLAGS "-L${PYTHON_BIN_DIR} -lpython${PYVERSION_NO_DOT}")
+    # Escapar o path para evitar problemas com espaços
+    file(TO_NATIVE_PATH "${PYTHON_LIB_DIR}" PYTHON_LIB_DIR_NATIVE)
+    set(PYTHON_LD_FLAGS "-L\"${PYTHON_LIB_DIR_NATIVE}\" -lpython${PYVERSION_NO_DOT}")
 else()
     execute_process(
         COMMAND ${PYTHON_EXECUTABLE}-config --ldflags

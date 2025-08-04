@@ -172,6 +172,15 @@ $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $lockFile = Join-Path $repoRoot "uv.lock"
 $envVarsBat = Join-Path $repoRoot "scripts\env_vars.bat"
 
+# Detecta arquitetura para nomear diretórios de Python
+$archShort = switch ($arch) {
+    "x86_64" { "x64" }
+    "aarch64" { "arm64" }
+    default { $arch }
+}
+
+Write-Host "[DEBUG] Arquitetura detectada: arch='$arch', archShort='$archShort'" -ForegroundColor Magenta
+
 # --- Preparação do env_vars.bat ---
 Write-Host "[INFO] Inicializando 'scripts\env_vars.bat' para o script de build..." -ForegroundColor Cyan
 if (Test-Path $envVarsBat) { Remove-Item $envVarsBat }
@@ -185,20 +194,22 @@ if ($gccPath) {
     Add-Content -Path $envVarsBat -Value "set PATH=$mingwDir;%PATH%"
 }
 
-# --- Loop de Criação dos Ambientes Python ---
+# --- Loop de Criação dos Ambientes Python usando uv no padrão global ---
 foreach ($V in $PY_VERSIONS) {
     $venvDir = Join-Path $repoRoot ".venv-$V"
+
+    # Remove ambiente antigo se existir
     if (Test-Path $venvDir) {
         Write-Host "[INFO] Removendo ambiente virtual antigo '$venvDir'..." -ForegroundColor Yellow
         Remove-Item $venvDir -Recurse -Force
     }
-    
-    Write-Host "[INFO] Criando ambiente virtual em '$venvDir' com Python $V..." -ForegroundColor Cyan
-    Write-Host "[INFO] Instalando Python $V via uv..." -ForegroundColor Cyan
+
+    Write-Host "[INFO] Instalando Python $V via uv (cache global)..." -ForegroundColor Cyan
     & $uvExe python install $V
-    Write-Host "[INFO] Criando ambiente virtual para Python $V..." -ForegroundColor Cyan
+
+    Write-Host "[INFO] Criando ambiente virtual para Python $V em '$venvDir'..." -ForegroundColor Cyan
     & $uvExe venv -p $V $venvDir
-    
+
     if (-not (Test-Path (Join-Path $venvDir "pyvenv.cfg"))) {
         Write-Host "[ERRO] Falha ao criar ambiente para Python $V." -ForegroundColor Red
         exit 1
@@ -208,7 +219,7 @@ foreach ($V in $PY_VERSIONS) {
     # Define VIRTUAL_ENV para que o uv global saiba onde instalar
     $oldVirtualEnv = $env:VIRTUAL_ENV
     $env:VIRTUAL_ENV = $venvDir
-    
+
     try {
         if (Test-Path $lockFile) {
             Write-Host "[INFO] Instalando dependências de 'uv.lock' para Python $V..." -ForegroundColor Cyan
@@ -222,15 +233,58 @@ foreach ($V in $PY_VERSIONS) {
     } catch {
         Write-Host "[ERRO] Falha ao instalar dependências para Python $V. Detalhes: $($_.Exception.Message)" -ForegroundColor Red
     } finally {
-        # Restaura a variável de ambiente para evitar efeitos colaterais
         $env:VIRTUAL_ENV = $oldVirtualEnv
     }
-    
-    # Exporta o caminho do executável Python para o env_vars.bat
+
+    # Descobre o Python home real a partir do pyvenv.cfg
+    $pyvenvCfgPath = Join-Path $venvDir "pyvenv.cfg"
+    $pythonHomeDir = $null
+    if (Test-Path $pyvenvCfgPath) {
+        try {
+            $pythonHomeDir = Get-Content $pyvenvCfgPath | Where-Object { $_ -match "^home\s*=\s*(.*)" } | ForEach-Object { $matches[1].Trim() }
+        } catch {
+            Write-Warning "[AVISO] Não foi possível ler o pyvenv.cfg para a versão $V."
+        }
+    }
+
     $pythonExe = Join-Path $venvDir "Scripts\python.exe"
-    $varName = "PYTHON${V.Replace('.','')}_EXE"
-    Add-Content -Path $envVarsBat -Value "set $varName=$pythonExe"
-    Write-Host "[INFO] Variável '$varName' adicionada a env_vars.bat" -ForegroundColor Green
+    $pyIncludeDir = if ($pythonHomeDir) { Join-Path $pythonHomeDir "Include" } else { "" }
+    $pyLibDir = if ($pythonHomeDir) { Join-Path $pythonHomeDir "libs" } else { "" }
+    $pyLibFile = if ($pyLibDir -ne "") { Get-ChildItem -Path $pyLibDir -Filter "python$($V.Replace('.',''))*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
+
+    # === DEBUG: Log de todas as variáveis antes da geração ===
+    # Write-Host "[DEBUG] === Variáveis para Python $V ===" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] V = '$V'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] arch = '$arch'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] archShort = '$archShort'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] pythonExe = '$pythonExe'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] pythonHomeDir = '$pythonHomeDir'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] pyIncludeDir = '$pyIncludeDir'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] pyLibDir = '$pyLibDir'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] pyLibFile = '$($pyLibFile.FullName)'" -ForegroundColor Magenta
+    # Write-Host "[DEBUG] envVarsBat = '$envVarsBat'" -ForegroundColor Magenta
+    
+    # Testa interpolação de strings para debug
+    $testVarName = "PYTHON${V.Replace('.','')}_${archShort}_EXE"
+    Write-Host "[DEBUG] Nome da variável seria: '$testVarName'" -ForegroundColor Magenta
+
+    # Exporta variáveis específicas por versão (ex: PYTHON311_x64_EXE)
+    $versionSuffix = $V.Replace('.', '')
+    $varPrefix = "PYTHON$versionSuffix" + "_$archShort"
+    
+    Add-Content -Path $envVarsBat -Value "set ${varPrefix}_EXE=$pythonExe"
+    Add-Content -Path $envVarsBat -Value "set ${varPrefix}_ROOT=$pythonHomeDir"
+    Add-Content -Path $envVarsBat -Value "set ${varPrefix}_INCLUDE=$pyIncludeDir"
+    if ($pyLibFile) {
+        Add-Content -Path $envVarsBat -Value "set ${varPrefix}_LIB=$($pyLibFile.FullName)"
+    } else {
+        Add-Content -Path $envVarsBat -Value "set ${varPrefix}_LIB="
+        Write-Warning "[AVISO] Biblioteca .lib não encontrada para Python $V em $pyLibDir"
+    }
+
+    # Nota: Removemos a geração de variáveis genéricas PYTHON_x64_* pois causavam sobrescrita.
+    # O script de build agora usa apenas as variáveis específicas por versão (PYTHON311_x64_*, PYTHON312_x64_*, etc.)
+    Write-Host "[INFO] Variáveis de ambiente para Python $V ($archShort) adicionadas a env_vars.bat" -ForegroundColor Green
 }
 
 # --- Copiar includes do Python (Python.h) para pd_sdk/include/<versao> ---
