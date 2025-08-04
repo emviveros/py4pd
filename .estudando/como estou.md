@@ -1,0 +1,3 @@
+agora os scripts em power shell são capazes de criar o ambiente e o build está compilando os binários para windows, mas o build nao está gerando todos os arquivos que deveria para que eu possa rodar o external corretamente, com os arquivos de help e tudo o mais que é necessário para empacotar no deken.
+
+Agora devo entender o que mais preciso gerar no build para efetivamente utilizar o py4pd no novo esquema de arquitetura capaz de utilizar ambas versões do python e usando o uv para controlar as bibliotecas python utilizadas nos patchs de Pd.
