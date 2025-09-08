@@ -46,8 +46,8 @@ Write-Host "[INFO] Permissões de administrador validadas."
 # --- Etapa 2: Detectar Arquitetura e Definir Variáveis ---
 Write-Host "[INFO] Etapa 2: Detectando arquitetura do sistema..." -ForegroundColor Green
 $repoRoot = $PSScriptRoot | Split-Path -Parent
-$uvDir = Join-Path $env:USERPROFILE ".local\bin"
-$uvExe = Join-Path $uvDir "uv.exe"
+# Define uv do bundle
+$uvExe = Join-Path $repoRoot "Resources\uv\uv-windows.exe"
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "x86_64" }
     "x86" { "x86" }
@@ -143,26 +143,21 @@ foreach ($pkg in $packages) {
     }
 }
 
-# --- Etapa 5: Instalar 'uv' pelo instalador oficial ---
-Write-Host "[INFO] Etapa 5: Instalando 'uv' via instalador oficial..." -ForegroundColor Green
+# --- Etapa 5: Usando uv embutido no bundle ---
+Write-Host "[INFO] Etapa 5: Usando 'uv' embutido do bundle..." -ForegroundColor Green
 
-# Verifica se o uv.exe já existe e está funcional
-if (Test-Path $uvExe) {
-    try {
-        & $uvExe --version | Out-Null
-        Write-Host "[INFO] 'uv' já está instalado em '$uvExe'."
-    } catch {
-        Write-Host "[AVISO] 'uv.exe' encontrado, mas não está funcional. Reinstalando..." -ForegroundColor Yellow
-        Remove-Item $uvExe -Force
-        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-    }
-} else {
-    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+if (-not (Test-Path $uvExe)) {
+    Write-Host "[ERRO] uv embutido não encontrado em '$uvExe'. Certifique-se que o bundle está completo." -ForegroundColor Red
+    exit 1
 }
 
-# Garante que o diretório do uv está no PATH
-$env:PATH = "$uvDir;$($env:PATH)"
-Write-Host "[DEBUG] Diretório '$uvDir' adicionado ao PATH da sessão."
+try {
+    & $uvExe --version | Out-Null
+    Write-Host "[INFO] 'uv' embutido encontrado e funcional em '$uvExe'."
+} catch {
+    Write-Host "[ERRO] 'uv' embutido não está funcional. Verifique o bundle." -ForegroundColor Red
+    exit 1
+}
 
 # --- Etapa 6: Configurar Ambiente Python com 'uv' ---
 Write-Host "[INFO] Etapa 6: Configurando ambiente Python com 'uv'..." -ForegroundColor Green
