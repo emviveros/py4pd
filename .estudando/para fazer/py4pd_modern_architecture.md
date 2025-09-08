@@ -58,11 +58,10 @@ Esta é a lógica central que oferece flexibilidade ao sistema. O script de boot
 
 ### 4.1. Prioridade 1: Controle Explícito do Usuário
 
-*   **Gatilho:** O usuário (avançado) envia uma mensagem ao `[py4pd]`, como `[packages /caminho/para/meu_ambiente/lib/python3.11/site-packages]`.
+*   **Gatilho:** O usuário (avançado) envia uma mensagem ao `[py4pd]`, como `[packages /caminho/para/meu_ambiente/packages]`.
 *   **Ação:** O Loader salva este caminho em um arquivo de configuração local ao patch (ex: `.py4pd/env.conf`). O script de bootstrap lê este arquivo e utiliza o ambiente especificado, sem realizar nenhuma outra configuração.
-*   **Caso de Uso:** Reutilizar ambientes pesados (IA, análise de dados) em múltiplos projetos para economizar espaço e tempo de instalação.
-
-### 4.2. Prioridade 2: Ambiente de Projeto (Busca Ascendente Contida)
+*   **Caso de Uso:** Reutilizar ambientes pesados (IA, análise de dados) em múltiplos projetos para economizar espaço e tempo de instalação. Implica em o usuãrio apõs terminar o desenvolvimento, em arrumar o patch para autoconter o ambiente e viabilizar distribuição plug-and-play.
+### 4.2. Prioridade 2: Ambiente de Projeto Existente (Busca Ascendente Contida)
 
 *   **Gatilho:** Nenhuma configuração explícita (Prioridade 1) existe.
 *   **Ação:** O script inicia uma busca por uma pasta `.venv` começando no diretório do patch atual e subindo na hierarquia de pastas. A busca **para** quando atinge o diretório raiz do projeto (o argumento `$2` passado pelo Loader).
